@@ -1,5 +1,6 @@
 
 from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace_all, Pattern, CustomConstraint
+import pandas as pd
 
 LAMBDA = lambda:0
 def is_lambda(v):
@@ -84,7 +85,7 @@ class TransformerBase:
         as well as the compile() for rewriting complex pipelines into more simples ones.
     '''
 
-    def transform(self, topics_or_res):
+    def transform(self, topics_or_res : pd.DataFrame) -> pd.DataFrame:
         '''
             Abstract method for all transformations. Typically takes as input a Pandas
             DataFrame, and also returns one also.
@@ -146,7 +147,7 @@ class IdentityTransformer(TransformerBase, Operation):
     def __init__(self, *args, **kwargs):
         super(IdentityTransformer, self).__init__(*args, **kwargs)
     
-    def transform(self, topics):
+    def transform(self, topics : pd.DataFrame) -> pd.DataFrame:
         return topics
 
 # this class is useful for testing. it returns a copy of the same
