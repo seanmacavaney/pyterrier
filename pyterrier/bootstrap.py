@@ -19,7 +19,12 @@ def logging(level):
 _logging = logging
 
 def setup_jnius():
-    from jnius import protocol_map # , autoclass
+    ''' this methods adds more utility methods to Python version of Terrier classes '''
+    from jnius import protocol_map  # , autoclass
+    from . import check_version
+
+
+    # IterablePosting
 
     def _iterableposting_next(self):
         ''' dunder method for iterating IterablePosting '''
@@ -34,6 +39,8 @@ def setup_jnius():
         '__next__': lambda self: _iterableposting_next(self)
     }
 
+    # Lexicon
+
     def _lexicon_getitem(self, term):
         ''' dunder method for accessing Lexicon '''
         rtr = self.getLexiconEntry(term)
@@ -46,6 +53,8 @@ def setup_jnius():
         '__contains__': lambda self, term: self.getLexiconEntry(term) is not None,
         '__len__': lambda self: self.numberOfEntries()
     }
+
+    # Index
 
     def _has_positions(index):
         p = index.getInvertedIndex().getPostings(index.getLexicon().getLexiconEntry(0).getValue())
@@ -72,6 +81,45 @@ def setup_jnius():
         # different numbers of documents. This implemented by the overloading the `+` Python operator
         '__add__': _index_add
     }
+
+    # MetaIndex
+    if check_version(5.3):
+        
+        def _metaindex_getitem(self, item):
+            import pandas as pd
+            if isinstance(item, int):
+                keys = self.getKeys()
+                if item < 0 or item >= len(self):
+                    raise IndexError("%d is out of range" % item)
+                values = self.getAllItems(item)
+                return pd.Series(values, index=keys, name=str(item))
+            if isinstance(item, str):
+                keys = self.getKeys()
+                if not item in keys:
+                    raise TypeError("%s is not a metaindex key (available: %s)" % (item, str(keys)))
+                docids = list(range(0, len(self)))
+                values = self.getItems(item, docids)
+                return pd.Series(values, index=docids, name=item)
+
+        def _metaindex_as_df(self):
+            import pandas as pd
+            rows=[]
+            keys=self.getKeys()
+            docids = list(range(0, len(self)))
+            values=self.getItems(keys, docids)
+            return pd.DataFrame(values, index=docids, columns=keys)
+
+        protocol_map["org.terrier.structures.MetaIndex"] = {
+            # this means that len(meta) returns the number of documents in the metaindex
+            '__len__': lambda self: self.size(),
+
+            # allows access to metaindex columns and rows as pandas Series
+            '__getitem__' : _metaindex_getitem,
+
+            # returns a copy of the meta index as a dataframe
+            'as_df' : _metaindex_as_df
+        }
+
 
 def setup_terrier(file_path, terrier_version=None, helper_version=None, boot_packages=[]):
     """
