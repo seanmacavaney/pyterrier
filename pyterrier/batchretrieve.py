@@ -100,7 +100,7 @@ class BatchRetrieve(BatchRetrieveBase):
             metadata(list): What metadata to retrieve
     """
     def __init__(self, index_location, controls=None, properties=None, metadata=["docno"],  num_results=None, wmodel=None, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(kwargs)
         
         self.indexref = parse_index_like(index_location)
         self.appSetup = autoclass('org.terrier.utility.ApplicationSetup')
