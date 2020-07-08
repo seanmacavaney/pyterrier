@@ -109,7 +109,7 @@ class TransformerBase:
         as well as the compile() for rewriting complex pipelines into more simples ones.
     '''
     
-     def __init__(self, **kwargs):
+    def __init__(self, **kwargs):
         if 'id' not in kwargs:
           raise ValueError('Invalid parameter %s for estimator %s. '
                   'Check the list of available parameters '
