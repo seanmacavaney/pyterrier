@@ -52,7 +52,7 @@ class BatchRetrieveBase(TransformerBase, Symbol):
         verbose(bool): If True transform method will display progress
     """
     def __init__(self, verbose=0, **kwargs):
-        super().__init__(kwargs)
+        super().__init__(**kwargs)
         self.verbose = verbose
 
 class BatchRetrieve(BatchRetrieveBase):
