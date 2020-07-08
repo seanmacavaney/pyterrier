@@ -52,7 +52,7 @@ class BatchRetrieveBase(TransformerBase, Symbol):
         verbose(bool): If True transform method will display progress
     """
     def __init__(self, verbose=0, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(kwargs)
         self.verbose = verbose
 
 class BatchRetrieve(BatchRetrieveBase):
@@ -100,7 +100,7 @@ class BatchRetrieve(BatchRetrieveBase):
             metadata(list): What metadata to retrieve
     """
     def __init__(self, index_location, controls=None, properties=None, metadata=["docno"],  num_results=None, wmodel=None, **kwargs):
-        super().__init__(kwargs)
+        super().__init__(**kwargs)
         
         self.indexref = parse_index_like(index_location)
         self.appSetup = autoclass('org.terrier.utility.ApplicationSetup')
