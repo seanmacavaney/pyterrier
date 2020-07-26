@@ -118,6 +118,22 @@ class TransformerBase:
           self.id = repr(self)
         else:
           self.id = str(kwargs['id'])
+        
+    def get_parameter(self,name):
+        if hasattr(self,name):
+          return getattr(self,name)
+        else:
+          raise ValueError('Invalid parameter name %s for estimator %s. '
+                      'Check the list of available parameters '
+                    %(name, self))
+        
+    def set_parameter(self,name,value):
+      if hasattr(self,name):
+        setattr(self,name,value)
+      else:
+        raise ValueError('Invalid parameter name %s for estimator %s. '
+                    'Check the list of available parameters '
+                  %(name, self))
 
     def transform(self, topics_or_res):
         '''
