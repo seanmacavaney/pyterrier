@@ -229,6 +229,14 @@ class BinaryTransformerBase(TransformerBase,Operation):
         super().__init__(operands=operands,  **kwargs)
         self.left = operands[0]
         self.right = operands[1]
+        
+    def get_transformer(self,name):
+        if name == self.left.id:
+          return self.left
+        elif name == self.right.id:
+          return self.right
+        else:
+          return None
 
 class NAryTransformerBase(TransformerBase,Operation):
     arity = Arity.polyadic
@@ -249,6 +257,15 @@ class NAryTransformerBase(TransformerBase,Operation):
             Returns the number of transformers in the operator.
         '''
         return len(self.models)
+   
+    def get_transformer(self,name):
+        n = 0
+        for m in self.models:
+          if name==m.id:
+            n += 1
+            return m
+        if n == 0:
+          return None
 
 class SetUnionTransformer(BinaryTransformerBase):
     name = "Union"
