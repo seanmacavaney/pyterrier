@@ -115,7 +115,7 @@ class TransformerBase:
                   'Check the list of available parameters '
                 %(kwargs.keys(), self))
         elif kwargs['id'] == None:
-          self.id = repr(self)
+          raise Exception("The value of parameter 'id' cannot be None.")
         else:
           self.id = str(kwargs['id'])
         
