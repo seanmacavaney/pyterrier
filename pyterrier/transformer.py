@@ -111,7 +111,7 @@ class TransformerBase:
     
     def __init__(self, **kwargs):
         if 'id' not in kwargs:
-          raise ValueError('Lack of parameter 'id' for estimator %s. '
+          raise ValueError('Lack of parameter id for estimator %s. '
                   'Check the list of available parameters '
                 %(self.__class__.__name__))
         elif kwargs['id'] == None:
