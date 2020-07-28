@@ -169,7 +169,7 @@ class BatchRetrieve(BatchRetrieveBase):
             queries['qid'] = queries['qid'].astype(str)
 
 
-        for index,row in tqdm(queries.iterrows(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
+        for index,row in tqdm(queries.iterrows(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
             rank = 0
             qid = str(row['qid'])
             query = row['query']
@@ -365,7 +365,7 @@ class FeaturesBatchRetrieve(BatchRetrieve):
         if queries["qid"].dtype == np.int64:
             queries['qid'] = queries['qid'].astype(str)
 
-        for index, row in tqdm(queries.iterrows(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
+        for index, row in tqdm(queries.iterrows(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
             qid = str(row['qid'])
             query = row['query']
 
