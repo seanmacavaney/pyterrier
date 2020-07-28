@@ -28,7 +28,7 @@ def get_transformer(v):
         return LambdaPipeline(v)
     if isinstance(v, types.FunctionType):
         return LambdaPipeline(v)
-    raise ValueError("Passed parameter %s cannot be coerced into a transformer", str(v))
+    raise ValueError("Passed parameter %s cannot be coerced into a transformer" % str(v))
 
 rewrites_setup = False
 rewrite_rules = []
@@ -103,28 +103,23 @@ class Scalar(Symbol):
         super().__init__(name)
         self.value = value
 
-class TransformerBase:
+class TransformerBase(object):
     '''
         Base class for all transformers. Implements the various operators >> + * | & 
         as well as the compile() for rewriting complex pipelines into more simples ones.
     '''
     
     def __init__(self, **kwargs):
-        if 'id' not in kwargs:
-          raise ValueError('Lack of parameter id for estimator %s. '
-                  'Check the list of available parameters '
-                %(self.__class__.__name__))
-        elif kwargs['id'] == None:
-          raise Exception("The value of parameter 'id' cannot be None.")
-        else:
+
+        if 'id' in kwargs:
           self.id = str(kwargs['id'])
         
     def get_parameter(self,name):
         if hasattr(self,name):
           return getattr(self,name)
         else:
-          raise ValueError('Invalid parameter name %s for estimator %s. '
-                      'Check the list of available parameters '
+          raise ValueError("Invalid parameter name %s for estimator %s. " + 
+                      "Check the list of available parameters "
                     %(name, self))
         
     def set_parameter(self,name,value):
@@ -202,7 +197,8 @@ class IdentityTransformer(TransformerBase, Operation):
     arity = Arity.nullary
 
     def __init__(self, *args, **kwargs):
-        super(IdentityTransformer, self).__init__(*args, **kwargs)
+        Operation.__init__(self, [])
+        TransformerBase.__init__(self, **kwargs)
     
     def transform(self, topics):
         return topics
@@ -213,7 +209,8 @@ class UniformTransformer(TransformerBase, Operation):
     arity = Arity.nullary
 
     def __init__(self, rtr, **kwargs):
-        super().__init__(operands=[], **kwargs)
+        Operation.__init__(self, [])
+        TransformerBase.__init__(self, **kwargs)
         self.operands=[]
         self.rtr = rtr[0]
     
@@ -226,7 +223,8 @@ class BinaryTransformerBase(TransformerBase,Operation):
 
     def __init__(self, operands, **kwargs):
         assert 2 == len(operands)
-        super().__init__(operands=operands,  **kwargs)
+        Operation.__init__(self, operands)
+        TransformerBase.__init__(self, **kwargs)
         self.left = operands[0]
         self.right = operands[1]
         
@@ -242,7 +240,8 @@ class NAryTransformerBase(TransformerBase,Operation):
     arity = Arity.polyadic
 
     def __init__(self, operands, **kwargs):
-        super().__init__(operands=operands, **kwargs)
+        Operation.__init__(self, operands)
+        TransformerBase.__init__(self, **kwargs)
         models = operands
         self.models = list( map(lambda x : get_transformer(x), models) )
 
@@ -489,8 +488,6 @@ class ComposedPipeline(NAryTransformerBase):
     >>> # this is equivelent
     >>> # comp = DPH_br >> lambda res : res[res["rank"] < 2]]
     """
-    def __init__(self):
-        pass
         
     def transform(self, topics):
         for m in self.models:
