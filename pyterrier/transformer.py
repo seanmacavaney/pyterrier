@@ -489,7 +489,7 @@ class ComposedPipeline(NAryTransformerBase):
     >>> # this is equivelent
     >>> # comp = DPH_br >> lambda res : res[res["rank"] < 2]]
     """
-    def __init__(self):
+    def __init__(self, right):
         pass
         
     def transform(self, topics):
