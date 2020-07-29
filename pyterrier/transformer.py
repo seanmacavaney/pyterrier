@@ -166,7 +166,7 @@ class TransformerBase(object):
 
         #using topics and evaluation
         res = self.transform(topics)
-        eval_score = mean_ndcg(res,qrels)
+        eval_score = self.mean_ndcg(res,qrels)
         parameter_score_tuple += (eval_score,) #such as (('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654), and 0.2654 is the evaluation score.
         eval_list.append(parameter_score_tuple)
 
