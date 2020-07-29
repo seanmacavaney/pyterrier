@@ -131,7 +131,7 @@ class TransformerBase(object):
                     'Check the list of available parameters '
                   %(name, self))
         
-    def GridSearch(self, topics, qrels, param_map, metric=“ndcg”):
+    def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
       candi_dict = {}
       parameter_score_tuple = ()
       eval_list = []
