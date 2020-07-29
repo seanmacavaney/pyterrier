@@ -121,7 +121,7 @@ class TransformerBase(object):
         else:
           raise ValueError("Invalid parameter name %s for estimator %s. " + 
                       "Check the list of available parameters "
-                    %(name, self))
+                    %(str(name), self))
         
     def set_parameter(self,name,value):
       if hasattr(self,name):
