@@ -189,7 +189,7 @@ class TransformerBase(object):
       for i in range(len(best_params)):
         print(best_params[i])
 
-      return best_score,best_params
+      return best_params
     
     def transform(self, topics_or_res):
         '''
