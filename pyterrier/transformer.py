@@ -1,5 +1,6 @@
 
 import types
+import itertools
 from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace_all, Pattern, CustomConstraint
 from warnings import warn
 
@@ -129,7 +130,48 @@ class TransformerBase(object):
         raise ValueError('Invalid parameter name %s for estimator %s. '
                     'Check the list of available parameters '
                   %(name, self))
+        
+    def GridSearch(self, topics, qrels, param_map, metric=“ndcg”):
+      candi_dict = {}
+      parameter_score_tuple = ()
+      eval_list = []
 
+      #Store the all parameter names and candidate values into a dictionary
+      #such as {('id1', 'wmodel'): ['BM25', 'PL2'], ('id1', 'c'): [0.1, 0.2, 0.3], ('id2', 'lr'): [0.001, 0.01, 0.1]}
+      for comp in param_map:
+        for param in param_map[comp]:
+          candi_dict[(comp,param)] = param_map[comp][param]
+
+      #Iterate the candidate values in different combinations
+      items = sorted(candi_dict.items())
+      keys,values = zip(*items)
+      for v in itertools.product(*values):
+        #'params' is every combination of candidates
+        params = dict(zip(keys,v))
+
+        #Set the parameter value in the corresponding transformer of the pipeline
+        for pipe_id,param_name in params:
+          self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
+          parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
+          parameter_score_tuple += parameter_tuple
+          self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
+
+        #using topics and evaluation
+        res = self.transform(topics)
+        eval_score = mean_ndcg(res,qrels)
+        parameter_score_tuple += (eval_score,) #such as (('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654), and 0.2654 is the evaluation score.
+        eval_list.append(parameter_score_tuple)
+
+      best_score = 0
+      max_index = 0
+      for i in range(len(eval_list)):
+        if eval_list[i][-1] > best_score:
+          best_score = eval_list[i][-1]
+          max_index = i
+      best_params = eval_list[max_index][0:-1]
+
+      return best_score,best_params
+    
     def transform(self, topics_or_res):
         '''
             Abstract method for all transformations. Typically takes as input a Pandas
