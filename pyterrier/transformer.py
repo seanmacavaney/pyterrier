@@ -141,7 +141,6 @@ class TransformerBase(object):
 
     def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
       candi_dict = {}
-      parameter_score_tuple = ()
       eval_list = []
 
       #Store the all parameter names and candidate values into a dictionary
@@ -156,7 +155,8 @@ class TransformerBase(object):
       for v in itertools.product(*values):
         #'params' is every combination of candidates
         params = dict(zip(keys,v))
-
+        parameter_score_tuple = ()
+        
         #Set the parameter value in the corresponding transformer of the pipeline
         for pipe_id,param_name in params:
           self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
