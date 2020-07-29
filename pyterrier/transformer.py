@@ -177,6 +177,14 @@ class TransformerBase(object):
           best_score = eval_list[i][-1]
           max_index = i
       best_params = eval_list[max_index][0:-1]
+    
+      #print the best score
+      print("The best score is: ",best_score)
+      
+      #print the best param map  
+      print("The best parameters map is :")
+      for i in range(len(best_params)):
+        print(best_params[i])
 
       return best_score,best_params
     
