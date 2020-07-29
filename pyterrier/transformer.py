@@ -155,20 +155,22 @@ class TransformerBase(object):
       for v in itertools.product(*values):
         #'params' is every combination of candidates
         params = dict(zip(keys,v))
-        parameter_score_tuple = ()
+        #parameter_score_tuple = ()
+        parameter_score_list = []
         
         #Set the parameter value in the corresponding transformer of the pipeline
         for pipe_id,param_name in params:
           parameter_tuple = ()
           self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
           parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
-          parameter_score_tuple += parameter_tuple
+          parameter_score_list.append(parameter_tuple)
           #self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
 
         #using topics and evaluation
         res = self.transform(topics)
         eval_score = self.mean_ndcg(res,qrels)
-        parameter_score_tuple += (eval_score,) #such as (('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654), and 0.2654 is the evaluation score.
+        #parameter_score_tuple += (eval_score,) #such as (('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654), and 0.2654 is the evaluation score.
+        parameter_score_list.append(eval_score) #such as [('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654], and 0.2654 is the evaluation score.
         eval_list.append(parameter_score_tuple)
 
       best_score = 0
