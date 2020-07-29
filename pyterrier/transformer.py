@@ -159,10 +159,11 @@ class TransformerBase(object):
         
         #Set the parameter value in the corresponding transformer of the pipeline
         for pipe_id,param_name in params:
+          parameter_tuple = ()
           self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
           parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
           parameter_score_tuple += parameter_tuple
-          self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
+          #self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
 
         #using topics and evaluation
         res = self.transform(topics)
