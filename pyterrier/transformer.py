@@ -131,6 +131,14 @@ class TransformerBase(object):
                     'Check the list of available parameters '
                   %(name, self))
         
+    def mean_ndcg(res, qrels):
+      from sklearn.metrics import ndcg_score
+      ndcgs=[]
+      joined = res.merge(qrels, how=‘left’, on=[‘qid’, ‘doco’])
+      for qid, qid_group in joined.fillna(0).groupby('qid'):
+        ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
+      return  sum(ndcgs) / len(ndcgs)
+
     def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
       candi_dict = {}
       parameter_score_tuple = ()
