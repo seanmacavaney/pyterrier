@@ -131,7 +131,7 @@ class TransformerBase(object):
                     'Check the list of available parameters '
                   %(name, self))
         
-    def mean_ndcg(res, qrels):
+    def mean_ndcg(self, res, qrels):
       from sklearn.metrics import ndcg_score
       ndcgs=[]
       joined = res.merge(qrels, how='left', on=['qid', 'doco'])
