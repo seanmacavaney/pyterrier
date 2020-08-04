@@ -208,6 +208,7 @@ class TransformerBase(object):
     def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
       from sklearn.model_selection import KFold
       import numpy as np
+      import pandas as pd
       KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
       #all_score = []
       all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates()})
