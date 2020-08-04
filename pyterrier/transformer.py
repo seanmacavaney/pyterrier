@@ -220,7 +220,7 @@ class TransformerBase(object):
         # print(topics_train,topics_test)
         # print(qrels_train,qrels_test)
 
-        best_param = self.gridsearch(self,topics_train,qrels_train,param_map,metric='ndcg')
+        best_param = self.GridSearch(self,topics_train,qrels_train,param_map,metric='ndcg')
         for i in range(len(best_param)):
           self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
 
