@@ -139,7 +139,7 @@ class TransformerBase(object):
         ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
       return  sum(ndcgs) / len(ndcgs)
     
-    def ndcg_score(res, qrels):
+    def ndcg_score(self, res, qrels):
       from sklearn.metrics import ndcg_score
       import pandas as pd
       import numpy as np
@@ -205,8 +205,8 @@ class TransformerBase(object):
 
       return best_params
     
-    def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', num_folds=n):
-      KF=KFold(n_splits=n) #n_splits can be tested and changed
+    def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
+      KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
       #all_score = []
       all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates()})
       #test['qid'] = test['qid'].astype(object)
@@ -222,7 +222,7 @@ class TransformerBase(object):
           self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
 
         test_res = self.transform(topics_test)
-        test_eval_df = ndcg_score(test_res,qrels_test)
+        test_eval_df = self.ndcg_score(test_res,qrels_test)
         #all_score.append(test_eval_score)
         pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
       return all_split_scores  
