@@ -138,7 +138,21 @@ class TransformerBase(object):
       for qid, qid_group in joined.fillna(0).groupby('qid'):
         ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
       return  sum(ndcgs) / len(ndcgs)
-
+    
+    def ndcg_score(res, qrels):
+      from sklearn.metrics import ndcg_score
+      import pandas as pd
+      import numpy as np
+      ndcgs=[]
+      qids=[]
+      joined = res.merge(qrels, how='left', on=['qid', 'docno'])
+      for qid, qid_group in joined.fillna(0).groupby('qid'):
+        ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
+        qids.append(qid)
+      ndcgs_df = pd.DataFrame({'ndcg':ndcgs, 'qid':qids})
+      ndcgs_df.sort_values(by="qid")
+      return  ndcgs_df
+    
     def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
       candi_dict = {}
       eval_list = []
@@ -191,6 +205,28 @@ class TransformerBase(object):
 
       return best_params
     
+    def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', num_folds=n):
+      KF=KFold(n_splits=n) #n_splits can be tested and changed
+      #all_score = []
+      all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates()})
+      #test['qid'] = test['qid'].astype(object)
+      for train_index,test_index in KF.split(topics):
+        # print("TRAIN:",train_index,"TEST:",test_index)
+        topics_train,topics_test=topics.iloc[train_index],topics.iloc[test_index]
+        qrels_train,qrels_test=qrels.iloc[train_index],qrels.iloc[test_index]
+        # print(topics_train,topics_test)
+        # print(qrels_train,qrels_test)
+
+        best_param = self.gridsearch(self,topics_train,qrels_train,param_map,metric='ndcg')
+        for i in range(len(best_param)):
+          self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
+
+        test_res = self.transform(topics_test)
+        test_eval_df = ndcg_score(test_res,qrels_test)
+        #all_score.append(test_eval_score)
+        pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
+      return all_split_scores  
+
     def transform(self, topics_or_res):
         '''
             Abstract method for all transformations. Typically takes as input a Pandas
