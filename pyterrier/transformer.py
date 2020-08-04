@@ -226,6 +226,7 @@ class TransformerBase(object):
 
         test_res = self.transform(topics_test)
         test_eval_df = self.ndcg_score(test_res,qrels_test)
+        test_eval_df['qid'] = test_eval_df['qid'].astype(object)
         #all_score.append(test_eval_score)
         all_split_scores = pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
       return all_split_scores  
