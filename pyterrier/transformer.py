@@ -216,7 +216,12 @@ class TransformerBase(object):
       for train_index,test_index in KF.split(topics):
         # print("TRAIN:",train_index,"TEST:",test_index)
         topics_train,topics_test=topics.iloc[train_index],topics.iloc[test_index]
-        qrels_train,qrels_test=qrels.iloc[train_index],qrels.iloc[test_index]
+        qrels_train = pd.DataFrame()
+        qrels_test = pd.DataFrame()
+        for i in train_index:
+          qrels_train=pd.concat([qrels_train,qrels[qrels['qid']==topics.iloc[i].qid]])
+        for i in test_index:
+          qrels_test=pd.concat([qrels_test,qrels[qrels['qid']==topics.iloc[i].qid]])
         # print(topics_train,topics_test)
         # print(qrels_train,qrels_test)
 
@@ -226,7 +231,7 @@ class TransformerBase(object):
 
         test_res = self.transform(topics_test)
         test_eval_df = self.ndcg_score(test_res,qrels_test)
-        test_eval_df['qid'] = test_eval_df['qid'].astype(object)
+        #test_eval_df['qid'] = test_eval_df['qid'].astype(object)
         #all_score.append(test_eval_score)
         all_split_scores = pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
       return all_split_scores  
