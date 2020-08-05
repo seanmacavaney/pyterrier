@@ -211,7 +211,7 @@ class TransformerBase(object):
       import pandas as pd
       KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
       #all_score = []
-      all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates()})
+      all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates().values})
       #test['qid'] = test['qid'].astype(object)
       for train_index,test_index in KF.split(topics):
         # print("TRAIN:",train_index,"TEST:",test_index)
