@@ -211,7 +211,8 @@ class TransformerBase(object):
       import pandas as pd
       KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
       #all_score = []
-      all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates().values})
+      #all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates().values})
+      all_split_scores = pd.DataFrame({})
       #test['qid'] = test['qid'].astype(object)
       for train_index,test_index in KF.split(topics):
         # print("TRAIN:",train_index,"TEST:",test_index)
@@ -233,7 +234,8 @@ class TransformerBase(object):
         test_eval_df = self.ndcg_score(test_res,qrels_test)
         #test_eval_df['qid'] = test_eval_df['qid'].astype(object)
         #all_score.append(test_eval_score)
-        all_split_scores = pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
+        #all_split_scores = pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
+        all_split_scores = pd.concat([all_split_scores,test_eval_df],axis=1)
       return all_split_scores  
 
     def transform(self, topics_or_res):
