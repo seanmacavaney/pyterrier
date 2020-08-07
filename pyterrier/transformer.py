@@ -149,7 +149,7 @@ class TransformerBase(object):
       for qid, qid_group in joined.fillna(0).groupby('qid'):
         ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
         qids.append(qid)
-      ndcgs_df = pd.DataFrame({'ndcg':ndcgs, 'qid':qids})
+      ndcgs_df = pd.DataFrame({'qid':qids, 'ndcg':ndcgs})
       ndcgs_df.sort_values(by="qid")
       return  ndcgs_df
     
