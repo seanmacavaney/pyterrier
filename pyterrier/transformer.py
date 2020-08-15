@@ -371,11 +371,13 @@ class NAryTransformerBase(TransformerBase,Operation):
             return self
       else:
           for m in self.models:
-            if hasattr(m,"id") and name == m.id:
-              return m
-            rtr = m.get_transformer(name)
-            if rtr is not None:
-              return rtr
+            if hasattr(m,"id"):
+              if name == m.id:
+                return m
+            else:
+              rtr = m.get_transformer(name)
+              if rtr is not None:
+                return rtr
       return None
 
 class SetUnionTransformer(BinaryTransformerBase):
