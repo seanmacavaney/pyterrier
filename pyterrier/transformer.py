@@ -368,7 +368,7 @@ class NAryTransformerBase(TransformerBase,Operation):
     def get_transformer(self,name):
         n = 0
         for m in self.models:
-          if not hasattr(m,id):
+          if not hasattr(m,str(id)):
             m.get_transformer(id)
           #   m.models = list( map(lambda x : get_transformer(x), m) )
           #   for i in m.models:
