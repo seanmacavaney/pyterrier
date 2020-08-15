@@ -365,18 +365,18 @@ class NAryTransformerBase(TransformerBase,Operation):
         '''
         return len(self.models)
    
-    def get_transformer(self,id):
+    def get_transformer(self,name):
         n = 0
         for m in self.models:
           if not hasattr(m,"id"):
-            m.get_transformer(id)
+            m.get_transformer(name)
           #   m.models = list( map(lambda x : get_transformer(x), m) )
           #   for i in m.models:
           #     if id == i.id:
           #       n += 1
           #       return i
           else:
-            if id == m.id:
+            if name == m.id:
               n += 1
               return m
         if n == 0:
