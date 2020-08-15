@@ -380,7 +380,7 @@ class NAryTransformerBase(TransformerBase,Operation):
               n += 1
               return m
         if n == 0:
-          return None
+          raise ValueError('No match object in pipeline')
 
 class SetUnionTransformer(BinaryTransformerBase):
     name = "Union"
