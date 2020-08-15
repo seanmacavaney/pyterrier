@@ -371,7 +371,7 @@ class NAryTransformerBase(TransformerBase,Operation):
             return self
       else:
           for m in self.models:
-            if hasattr(m,“id”) and name == m.id:
+            if hasattr(m,"id") and name == m.id:
               return m
             rtr = m.get_transformer(name)
             if rtr is not None:
