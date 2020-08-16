@@ -1,6 +1,7 @@
 
 import types
 import itertools
+from tqdm import tqdm
 from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace_all, Pattern, CustomConstraint
 from warnings import warn
 
