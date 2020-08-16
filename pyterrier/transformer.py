@@ -166,7 +166,7 @@ class TransformerBase(object):
       #Iterate the candidate values in different combinations
       items = sorted(candi_dict.items())
       keys,values = zip(*items)
-      for v in itertools.product(*values):
+      for v in tqdm(itertools.product(*values),total=10,desc = "progress meter",ncols = 100,postfix = dict,mininterval = 0.3):
         #'params' is every combination of candidates
         params = dict(zip(keys,v))
         #parameter_score_tuple = ()
