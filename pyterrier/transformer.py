@@ -176,7 +176,10 @@ class TransformerBase(object):
         #Set the parameter value in the corresponding transformer of the pipeline
         for pipe_id,param_name in params:
           parameter_tuple = ()
-          self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
+          if not hasattr(self,"id"):
+            self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
+          else:
+            self.set_parameter(param_name,params[pipe_id,param_name])
           parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
           parameter_score_list.append(parameter_tuple)
           #self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
@@ -229,7 +232,10 @@ class TransformerBase(object):
 
         best_param = self.GridSearch(topics_train,qrels_train,param_map,metric="ndcg")
         for i in range(len(best_param)):
-          self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
+          if not hasattr(self,"id"):
+            self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
+          else:
+            self.set_parameter(best_param[i][1],best_param[i][2])
 
         test_res = self.transform(topics_test)
         test_eval_df = self.ndcg_score(test_res,qrels_test)
