@@ -198,7 +198,15 @@ class TransformerBase(object):
           best_score = eval_list[i][-1]
           max_index = i
       best_params = eval_list[max_index][0:-1]
-    
+      
+      for i in range(len(best_params)):
+        if not hasattr(self,"id"):
+          self.get_transformer(best_params[i][0]).set_parameter(best_params[i][1],best_params[i][2])
+        else:
+          self.set_parameter(best_params[i][1],best_params[i][2])
+      test_res = self.transform(topics)
+      test_eval_df = self.ndcg_score(test_res,qrels)
+        
       #print the best score
       print("The best score is: ",best_score)
       
@@ -207,7 +215,7 @@ class TransformerBase(object):
       for i in range(len(best_params)):
         print(best_params[i])
 
-      return best_params
+      return test_eval_df
     
     def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
       from sklearn.model_selection import KFold
