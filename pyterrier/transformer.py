@@ -206,10 +206,11 @@ class TransformerBase(object):
           self.set_parameter(best_params[i][1],best_params[i][2])
       test_res = self.transform(topics)
       test_eval_df = self.ndcg_score(test_res,qrels)
-        
+      
+      #print evaluation results for each product
+      print("The evaluation results:",eval_list)
       #print the best score
       print("The best score is: ",best_score)
-      
       #print the best param map  
       print("The best parameters map is :")
       for i in range(len(best_params)):
