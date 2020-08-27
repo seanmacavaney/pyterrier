@@ -217,7 +217,8 @@ class TransformerBase(object):
       for i in range(len(best_params)):
         print(best_params[i])
         
-      print("The evaluation results of best transformer:", test_eval_df)
+      print("The evaluation results of best transformer:")
+      print(test_eval_df)
     
       return best_transformer
     
