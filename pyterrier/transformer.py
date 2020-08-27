@@ -216,8 +216,10 @@ class TransformerBase(object):
       print("The best parameters map is :")
       for i in range(len(best_params)):
         print(best_params[i])
-
-      return test_eval_df
+        
+      test_eval_df
+    
+      return best_transformer
     
     def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
       from sklearn.model_selection import KFold
