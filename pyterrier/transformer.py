@@ -204,6 +204,7 @@ class TransformerBase(object):
           self.get_transformer(best_params[i][0]).set_parameter(best_params[i][1],best_params[i][2])
         else:
           self.set_parameter(best_params[i][1],best_params[i][2])
+      best_transformer = self
       test_res = self.transform(topics)
       test_eval_df = self.ndcg_score(test_res,qrels)
       
