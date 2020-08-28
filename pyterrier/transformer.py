@@ -220,7 +220,7 @@ class TransformerBase(object):
       print("The evaluation results of best transformer:")
       print(test_eval_df)
     
-      return best_transformer
+      return best_transformer,test_eval_df
     
     def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
       from sklearn.model_selection import KFold
