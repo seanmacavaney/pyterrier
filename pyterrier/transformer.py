@@ -243,14 +243,14 @@ class TransformerBase(object):
         # print(topics_train,topics_test)
         # print(qrels_train,qrels_test)
 
-        best_param = self.GridSearch(topics_train,qrels_train,param_map,metric="ndcg")
-        for i in range(len(best_param)):
-          if not hasattr(self,"id"):
-            self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
-          else:
-            self.set_parameter(best_param[i][1],best_param[i][2])
+        best_transformer, test_eval_df = self.GridSearch(topics_train,qrels_train,param_map,metric="ndcg")
+#         for i in range(len(best_param)):
+#           if not hasattr(self,"id"):
+#             self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
+#           else:
+#             self.set_parameter(best_param[i][1],best_param[i][2])
 
-        test_res = self.transform(topics_test)
+        test_res = best_transformer.transform(topics_test)
         test_eval_df = self.ndcg_score(test_res,qrels_test)
         #test_eval_df['qid'] = test_eval_df['qid'].astype(object)
         #all_score.append(test_eval_score)
