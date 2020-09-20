@@ -111,11 +111,13 @@ class TransformerBase(object):
         as well as the compile() for rewriting complex pipelines into more simples ones.
     '''
     
+    # Set id parameter for transformers
     def __init__(self, **kwargs):
 
         if 'id' in kwargs:
           self.id = str(kwargs['id'])
         
+    # Get specific parameter value by parameter's name    
     def get_parameter(self,name):
         if hasattr(self,name):
           return getattr(self,name)
@@ -123,7 +125,8 @@ class TransformerBase(object):
           raise ValueError("Invalid parameter name %s for estimator %s. " + 
                       "Check the list of available parameters "
                     %(str(name), self))
-        
+    
+    # Set the value for specific parameter
     def set_parameter(self,name,value):
       if hasattr(self,name):
         setattr(self,name,value)
@@ -131,7 +134,8 @@ class TransformerBase(object):
         raise ValueError('Invalid parameter name %s for estimator %s. '
                     'Check the list of available parameters '
                   %(name, self))
-        
+     
+    # The evaluation method for calculating the mean nDCG score across all the queries
     def mean_ndcg(self, res, qrels):
       from sklearn.metrics import ndcg_score
       ndcgs=[]
@@ -140,6 +144,7 @@ class TransformerBase(object):
         ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
       return  sum(ndcgs) / len(ndcgs)
     
+    # The evaluation method for calculating the nDCG scores for each query
     def ndcg_score(self, res, qrels):
       from sklearn.metrics import ndcg_score
       import pandas as pd
@@ -154,6 +159,7 @@ class TransformerBase(object):
       ndcgs_df.sort_values(by="qid")
       return  ndcgs_df
     
+    # The algorithm for grid search
     def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
       candi_dict = {}
       eval_list = []
@@ -177,13 +183,12 @@ class TransformerBase(object):
         for pipe_id,param_name in params:
           parameter_tuple = ()
           if not hasattr(self,"id"):
-            self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)]
+            self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)];For setting parameters for transformers in pipeline in different parameters combinations.
           else:
             self.set_parameter(param_name,params[pipe_id,param_name])
           parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
           parameter_score_list.append(parameter_tuple)
-          #self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#NEW ADDED.For setting parameters for transformers in pipeline in different parameters combinations.
-
+         
         #using topics and evaluation
         res = self.transform(topics)
         eval_score = self.mean_ndcg(res,qrels)
@@ -222,15 +227,14 @@ class TransformerBase(object):
     
       return best_transformer,test_eval_df
     
+    # The algorithm for grid search with cross validation
     def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
       from sklearn.model_selection import KFold
       import numpy as np
       import pandas as pd
       KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
-      #all_score = []
-      #all_split_scores = pd.DataFrame({"qid":qrels['qid'].drop_duplicates().values})
       all_split_scores = pd.DataFrame({})
-      #test['qid'] = test['qid'].astype(object)
+      
       for train_index,test_index in KF.split(topics):
         # print("TRAIN:",train_index,"TEST:",test_index)
         topics_train,topics_test=topics.iloc[train_index],topics.iloc[test_index]
@@ -252,9 +256,6 @@ class TransformerBase(object):
 
         test_res = best_transformer.transform(topics_test)
         test_eval_df = self.ndcg_score(test_res,qrels_test)
-        #test_eval_df['qid'] = test_eval_df['qid'].astype(object)
-        #all_score.append(test_eval_score)
-        #all_split_scores = pd.merge(all_split_scores,test_eval_df,on='qid',how='left')
         all_split_scores = pd.concat([all_split_scores,test_eval_df],axis=1)
       return all_split_scores  
 
@@ -355,7 +356,8 @@ class BinaryTransformerBase(TransformerBase,Operation):
         TransformerBase.__init__(self, **kwargs)
         self.left = operands[0]
         self.right = operands[1]
-        
+     
+    # The method for fetching the transformer by transformer's id in binary pipelines.
     def get_transformer(self,name):
         if name == self.left.id:
           return self.left
@@ -384,7 +386,8 @@ class NAryTransformerBase(TransformerBase,Operation):
             Returns the number of transformers in the operator.
         '''
         return len(self.models)
-   
+    
+    # The method for fetching the transformer by transformer's id in complex pipelines.
     def get_transformer(self,name):
       if hasattr(self,"id"):
         if self.id == name:
