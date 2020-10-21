@@ -50,7 +50,9 @@ Pyterrier provides an experiment object, which allows to compare multiple retrie
 pt.Experiment([BM25_br, PL2_br], topics, qrels, ["map", "ndcg"])
 ```
 
-There is a worked example in the [experiment notebook](examples/notebooks/experiment.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/experiment.ipynb)
+There is a worked example in the [experiment notebook](examples/notebooks/experiment.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/experiment.ipynb).
+
+You can also tune any parameters in your retrieval system using a [gridsearch](examples/notebooks/gridsearch.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/gridsearch.ipynb).
 
 # Pipelines
 
