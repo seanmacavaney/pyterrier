@@ -115,26 +115,26 @@ class TransformerBase(object):
     # Set id parameter for transformers
     def __init__(self, **kwargs):
         if 'id' in kwargs:
-          self.id = str(kwargs['id'])
+            self.id = str(kwargs['id'])
 
     # Get specific parameter value by parameter's name    
-    def get_parameter(self,name):
-        if hasattr(self,name):
-            return getattr(self,name)
+    def get_parameter(self, name):
+        if hasattr(self, name):
+            return getattr(self, name)
         else:
-            raise ValueError("Invalid parameter name %s for estimator %s. " + 
-                      "Check the list of available parameters " %(str(name), self))
+            raise ValueError(("Invalid parameter name %s for estimator %s. " + 
+                      "Check the list of available parameters") %(str(name), str(self)))
 
     # Set the value for specific parameter
-    def set_parameter(self,name,value):
-        if hasattr(self,name):
-            setattr(self,name,value)
+    def set_parameter(self, name, value):
+        if hasattr(self, name):
+            setattr(self, name, value)
         else:
-            raise ValueError('Invalid parameter name %s for estimator %s. '+
-                    'Check the list of available parameters ' %(name, self))
+            raise ValueError(('Invalid parameter name %s for estimator %s. '+
+                    'Check the list of available parameters') %(name, str(self)))
 
-    def get_transformer(self,id):
-        if hasattr(self,"id") and self.id == id:
+    def get_transformer(self, id):
+        if hasattr(self, "id") and self.id == id:
             return self
         return None
     
@@ -283,9 +283,9 @@ class BinaryTransformerBase(TransformerBase,Operation):
     # The method for fetching the transformer by transformer's id in binary pipelines.
     def get_transformer(self,id):
         if hasattr(self.left, "id") and id == self.left.id:
-          return self.left
+            return self.left
         elif hasattr(self.right, "id") and id == self.right.id:
-          return self.right
+            return self.right
         return None
 
 class NAryTransformerBase(TransformerBase,Operation):
