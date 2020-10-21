@@ -114,15 +114,16 @@ class ChestCacheTransformer(TransformerBase):
         if self.disable:
             return self.inner.transform(input_res)
         if "docid" in input_res.columns or "docno" in input_res.columns:
-            raise ValueError("Caching currently only supports input dataframes with queries as inputs and cannot be used for re-rankers")
+            raise ValueError("Caching of %s for re-ranking is not supported. Caching currently only supports input dataframes with queries as inputs and cannot be used for re-rankers." % self.inner.__repr__())
         return self._transform_qid(input_res)
 
     def _transform_qid(self, input_res):
         rtr = []
         todo=[]
         
+        # We cannot remove this iterrows() without knowing how to take named tuples into a dataframe
         for index, row in input_res.iterrows():
-            qid = row["qid"]
+            qid = str(row["qid"])
             self.requests += 1
             try:
                 df = self.chest.get(qid, None)
@@ -137,10 +138,10 @@ class ChestCacheTransformer(TransformerBase):
                 self.hits += 1
                 rtr.append(df)
         if len(todo) > 0:
-            tood_df = pd.concat(todo)
-            todo_res = self.inner.transform(tood_df)
-            for indx, row in tood_df.iterrows():
-                qid = row["qid"]
+            todo_df = pd.concat(todo)
+            todo_res = self.inner.transform(todo_df)
+            for row in todo_df.itertuples():
+                qid = row.qid
                 this_query_res = todo_res[todo_res["qid"] == qid]
                 self.chest[qid] = this_query_res
                 rtr.append(this_query_res)

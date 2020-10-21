@@ -4,6 +4,7 @@ from tqdm import tqdm
 import pandas as pd
 from .batchretrieve import parse_index_like
 from .transformer import TransformerBase, Symbol
+from warnings import warn
 
 TerrierQLParser = pt.autoclass("org.terrier.querying.TerrierQLParser")()
 TerrierQLToMatchingQueryTerms = pt.autoclass("org.terrier.querying.TerrierQLToMatchingQueryTerms")()
@@ -12,6 +13,13 @@ QueryResultSet = pt.autoclass("org.terrier.matching.QueryResultSet")
 DependenceModelPreProcess = pt.autoclass("org.terrier.querying.DependenceModelPreProcess")
 
 class SDM(TransformerBase):
+    '''
+        Implements the sequential dependence model, which Terrier supports using its
+        Indri/Galagoo compatible matchop query language. The rewritten query is derived using
+        the Terrier class DependenceModelPreProcess. 
+
+        This transformer changes the query. It must be followed by a Terrier Retrieve() transformer.
+    '''
 
     def __init__(self, verbose = 0, remove_stopwords = True, prox_model = None, **kwargs):
         super().__init__(**kwargs)
@@ -29,9 +37,9 @@ class SDM(TransformerBase):
         # instantiate the DependenceModelPreProcess, specifying a proximity model if specified
         sdm = DependenceModelPreProcess() if self.prox_model is None else DependenceModelPreProcess(self.prox_model)
         
-        for index,row in tqdm(queries.iterrows(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            qid = row["qid"]
-            query = row["query"]
+        for row in tqdm(queries.itertuples(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            qid = row.qid
+            query = row.query
             # parse the querying into a MQT
             rq = pt.autoclass("org.terrier.querying.Request")()
             rq.setQueryID(qid)
@@ -61,6 +69,10 @@ class SDM(TransformerBase):
             new_query = new_query[:-1]
             results.append([qid, new_query])
         return pd.DataFrame(results, columns=["qid", "query"])
+
+class SequentialDependence(SDM):
+    ''' alias for SDM '''
+    pass
     
 class QueryExpansion(TransformerBase):
     '''
@@ -96,13 +108,23 @@ class QueryExpansion(TransformerBase):
             scores = []
             occurrences = []
             metaindex = index.getMetaIndex()
+            skipped = 0
             for docno in docnos:
                 docid = metaindex.getDocument("docno", docno)
+                if docid == -1:
+                    skipped +=1 
                 assert docid != -1, "could not match docno" + docno + " to a docid for query " + qid    
                 docids.append(docid)
                 scores.append(0.0)
                 occurrences.append(0)
-        return QueryResultSet(docids,scores, occurrences)
+            if skipped > 0:
+                if skipped == len(docnos):
+                    warn("*ALL* %d feedback docnos for qid %s could not be found in the index" % (skipped, qid))
+                else:
+                    warn("%d feedback docnos for qid %s could not be found in the index" % (skipped, qid))
+        else:
+            raise ValueError("Input resultset has neither docid nor docno")
+        return QueryResultSet(docids, scores, occurrences)
 
     def _configure_request(self, rq):
         rq.setControl("qe_fb_docs", str(self.fb_docs))
@@ -114,9 +136,9 @@ class QueryExpansion(TransformerBase):
 
         queries = topics_and_res[["qid", "query"]].dropna(axis=0, subset=["query"]).drop_duplicates()
                 
-        for index,row in tqdm(queries.iterrows(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            qid = row["qid"]
-            query = row["query"]
+        for row in tqdm(queries.itertuples(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            qid = row.qid
+            query = row.query
             srq = self.manager.newSearchRequest(qid, query)
             rq = cast("org.terrier.querying.Request", srq)
             self.qe.configureIndex(rq.getIndex())
@@ -137,14 +159,13 @@ class QueryExpansion(TransformerBase):
             # this control for Terrier stops it re-stemming the expanded terms
             new_query = "applypipeline:off "
             for me in rq.getMatchingQueryTerms():
-                new_query += me.getKey().toString() + "^" + str(me.getValue().getWeight()) + " "
+                new_query += me.getKey().toString() + ( "^%.9f "  % me.getValue().getWeight() ) 
             # remove trailing space
             new_query = new_query[:-1]
             results.append([qid, new_query])
         return pd.DataFrame(results, columns=["qid", "query"])
 
 class DFRQueryExpansion(QueryExpansion):
-
     def __init__(self, *args, qemodel="Bo1", **kwargs):
         super().__init__(*args, **kwargs)
         self.qemodel = qemodel
@@ -218,7 +239,7 @@ class AxiomaticQE(QueryExpansion):
         self.fb_docs = fb_docs
         kwargs["qeclass"] = rm
         super().__init__(*args, **kwargs)
-        
+
     def transform(self, queries_and_docs):
         self.qe.fbTerms = self.fb_terms
         self.qe.fbDocs = self.fb_docs

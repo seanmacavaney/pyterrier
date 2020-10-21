@@ -21,7 +21,7 @@ class TestFeaturesBatchRetrieve(BaseTestCase):
         self.assertTrue("docno" in result.columns)
         self.assertTrue("score" in result.columns)
         self.assertTrue("features" in result.columns)
-        self.assertEqual(3, len(result))
+        self.assertEqual(2, len(result))
         self.assertEqual(result.iloc[0]["features"].size, 2)
 
         pipe_simple = firstpass >> (pt.BatchRetrieve(indexref, wmodel="DPH") ** pt.BatchRetrieve(indexref, wmodel="PL2"))
@@ -35,8 +35,8 @@ class TestFeaturesBatchRetrieve(BaseTestCase):
         JIR = pt.autoclass('org.terrier.querying.IndexRef')
         indexref = JIR.of(self.here + "/fixtures/index/data.properties")
         retr = pt.FeaturesBatchRetrieve(indexref, ["WMODEL:PL2"])
-        topics = pt.Utils.parse_trec_topics_file(self.here + "/fixtures/vaswani_npl/query-text.trec").head(3)
-        qrels = pt.Utils.parse_qrels(self.here + "/fixtures/vaswani_npl/qrels")
+        topics = pt.io.read_topics(self.here + "/fixtures/vaswani_npl/query-text.trec").head(3)
+        qrels = pt.io.read_qrels(self.here + "/fixtures/vaswani_npl/qrels")
         res = retr.transform(topics)
         res = res.merge(qrels, on=['qid', 'docno'], how='left').fillna(0)
         from sklearn.ensemble import RandomForestClassifier

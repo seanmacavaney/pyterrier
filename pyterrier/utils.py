@@ -2,7 +2,11 @@ import pandas as pd
 import pytrec_eval
 from collections import defaultdict
 import os
+import deprecation
 
+
+@deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.autopen()")
 def autoopen(filename, mode='rb'):
     if filename.endswith(".gz"):
         import gzip
@@ -15,17 +19,21 @@ def autoopen(filename, mode='rb'):
 class Utils:
 
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.write_results(res, filename, format='letor')")
     def write_results_letor(res, filename, qrels=None, default_label=0):
         if qrels is not None:
             res = res.merge(qrels, on=['qid', 'docno'], how='left').fillna(default_label)
         with autoopen(filename, "wt") as f:
-            for i, row in res.iterrows():
-                values = row["features"]
-                label = row["label"] if qrels is not None else default_label
+            for row in res.itertuples():
+                values = row.features
+                label = row.label if qrels is not None else default_label
                 feat_str = ' '.join( [ '%i:%f' % (i+1,values[i]) for i in range(len(values)) ] )
-                f.write("%d qid:%s %s # docno=%s\n" % (label, row["qid"], feat_str, row["docno"]))
+                f.write("%d qid:%s %s # docno=%s\n" % (label, row.qid, feat_str, row.docno))
     
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.write_results(res, filename, format='trec')")
     def write_results_trec(res, filename, run_name="pyterrier"):
         res_copy = res.copy()[["qid", "docno", "rank", "score"]]
         res_copy.insert(1, "Q0", "Q0")
@@ -33,15 +41,8 @@ class Utils:
         res_copy.to_csv(filename, sep=" ", header=False, index=False)
 
     @staticmethod
-    def parse_query_result(filename):
-        results = []
-        with open(filename, 'rt') as file:
-            for line in file:
-                split_line = line.strip("\n").split(" ")
-                results.append([split_line[1], float(split_line[2])])
-        return results
-
-    @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_results(filename, format='letor')")
     def parse_letor_results_file(filename, labels=False):
 
         def _parse_line(l):
@@ -84,6 +85,8 @@ class Utils:
             return pd.DataFrame(rows, columns=["qid", "docno", "features", "label"] if labels else ["qid", "docno", "features"])
 
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_results(filename, format='trec')")
     def parse_results_file(filename):
         results = []
         df = pd.read_csv(filename, sep=r'\s+', names=["qid", "iter", "docno", "rank", "score", "name"])
@@ -95,15 +98,8 @@ class Utils:
         return df
 
     @staticmethod
-    def parse_res_file(filename):
-        results = []
-        with open(filename, 'r') as file:
-            for line in file:
-                split_line = line.strip("\n").split(" ")
-                results.append([split_line[0], split_line[2], float(split_line[4])])
-        return results
-
-    @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_topics(filename, format='singleline')")
     def parse_singleline_topics_file(filepath, tokenise=True):
         """
         Parse a file containing topics, one per line
@@ -126,6 +122,8 @@ class Utils:
         return pd.DataFrame(rows, columns=["qid", "query"])
 
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_topics(filename, format='trec')")
     def parse_trec_topics_file(file_path, doc_tag="TOP", id_tag="NUM", whitelist=["TITLE"], blacklist=["DESC","NARR"]):
         """
         Parse a file containing topics in standard TREC format
@@ -141,7 +139,10 @@ class Utils:
         from . import check_version
         assert check_version("5.3")
         trecquerysource = autoclass('org.terrier.applications.batchquerying.TRECQuery')
-        tqs = trecquerysource([file_path], doc_tag, id_tag, whitelist, blacklist)
+        tqs = trecquerysource(
+            [file_path], doc_tag, id_tag, whitelist, blacklist,
+            # help jnius select the correct constructor 
+            signature="([Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V")
         topics_lst=[]
         while(tqs.hasNext()):
             topic = tqs.next()
@@ -151,6 +152,8 @@ class Utils:
         return topics_dt
 
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_topics(filename, format='trecxml')")
     def parse_trecxml_topics_file(filename, tags=["query", "question", "narrative"], tokenise=True):
         """
         Parse a file containing topics in TREC-like XML format
@@ -182,6 +185,8 @@ class Utils:
         return pd.DataFrame(topics, columns=["qid", "query"])
 
     @staticmethod
+    @deprecation.deprecated(deprecated_in="0.3.0",
+                        details="Please use pt.io.read_qrels(filename)")
     def parse_qrels(file_path):
         """
         Parse a file containing qrels
@@ -210,9 +215,9 @@ class Utils:
         Returns:
             dict: {qid:{docno:label,},}
         """
-        run_dict_pytrec_eval = defaultdict(dict)     
-        for index, row in df.iterrows():
-            run_dict_pytrec_eval[row['qid']][row['docno']] = int(row['label'])
+        run_dict_pytrec_eval = defaultdict(dict)
+        for row in df.itertuples():
+            run_dict_pytrec_eval[row.qid][row.docno] = int(row.label)
         return(run_dict_pytrec_eval)
 
     @staticmethod
@@ -227,8 +232,8 @@ class Utils:
             dict: {qid:{docno:score,},}
         """
         run_dict_pytrec_eval = defaultdict(dict)
-        for index, row in df.iterrows():
-            run_dict_pytrec_eval[row['qid']][row['docno']] = float(row['score'])
+        for row in df.itertuples():
+            run_dict_pytrec_eval[row.qid][row.docno] = float(row.score)
         return(run_dict_pytrec_eval)
 
     @staticmethod
@@ -236,26 +241,25 @@ class Utils:
         """
         Evaluate the result dataframe with the given qrels
 
+        Returns a dictionary, keyed by measure if perquery=False, or keyed by qid then measure if perquery=True
+
         Args:
             res: Either a dataframe with columns=['qid', 'docno', 'score'] or a dict {qid:{docno:score,},}
             qrels: Either a dataframe with columns=['qid','docno', 'label'] or a dict {qid:{docno:label,},}
             metrics(list): A list of strings specifying which evaluation metrics to use. Default=['map', 'ndcg']
             perquery(bool): If true return each metric for each query, else return mean metrics. Default=False
         """
-        def now():
-            from datetime import datetime
-            return datetime.now().strftime("%H:%M:%S.%f")
-        #print(now() + " evaluate started")    
+        from .io import coerce_dataframe
+        if not isinstance(res, dict):
+            res = coerce_dataframe(res)
         if isinstance(res, pd.DataFrame):
             batch_retrieve_results_dict = Utils.convert_res_to_dict(res)
         else:
             batch_retrieve_results_dict = res
-        #print(now() + " res ready")
         if isinstance(qrels, pd.DataFrame):
             qrels_dic = Utils.convert_qrels_to_dict(qrels)
         else:
             qrels_dic = qrels
-        #print(now() + " qrels ready")
         req_metrics = set()
         cutdown = False
         for m in metrics:
@@ -269,9 +273,7 @@ class Utils:
 
         evaluator = pytrec_eval.RelevanceEvaluator(qrels_dic, req_metrics)
 
-        #print(now() + " evaluating")
         result = evaluator.evaluate(batch_retrieve_results_dict)
-        #print(now() + " evaluation done")
         if perquery:
             if not cutdown:
                 return result
@@ -305,11 +307,15 @@ class Utils:
 
     @staticmethod
     def mean_of_measures(result, measures=None):
+        import numpy as np
         measures_sum = {}
         mean_dict = {}
         if measures is None:
             measures = next(iter(result.values()))
         measures_no_mean = set(["num_q", "num_rel", "num_ret", "num_rel_ret"])
+        if "iprec_at_recall" in measures:
+            measures = measures + ["iprec_at_recall_%0.2f" % cutoff for cutoff in np.arange(0., 1.1, 0.1) ]
+            measures.remove("iprec_at_recall")
         for val in result.values():
             for measure in measures:
                 measure_val = val[measure]

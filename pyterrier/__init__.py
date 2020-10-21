@@ -7,12 +7,15 @@ from . import datasets
 import importlib
 
 #sub modules
-rewrite = None
-index = None
-pipelines = None
 anserini = None
-transformer = None
 cache = None
+index = None
+io = None
+model = None
+pipelines = None
+rewrite = None
+transformer = None
+
 file_path = os.path.dirname(os.path.abspath(__file__))
 firstInit = False
 ApplicationSetup = None
@@ -75,7 +78,8 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     java_version = autoclass("java.lang.System").getProperty("java.version")
     if java_version.startswith("1.") or java_version.startswith("9."):
         raise RuntimeError("Pyterrier requires Java 11 or newer, we only found Java version %s;"
-            +" install a more recent Java, or change os.environ['JAVA_HOME'] to point to the proper Java installation")
+            +" install a more recent Java, or change os.environ['JAVA_HOME'] to point to the proper Java installation",
+            java_version)
     
     properties = autoclass('java.util.Properties')()
     ApplicationSetup = autoclass('org.terrier.utility.ApplicationSetup')
@@ -91,19 +95,23 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["cast"] = cast
     globals()["ApplicationSetup"] = ApplicationSetup
 
-    global rewrite
+    
     global anserini
-    global pipelines
-    global index
-    global transformer
     global cache
-    rewrite = importlib.import_module('.rewrite', package='pyterrier') 
+    global index
+    global io
+    global model
+    global pipelines
+    global rewrite
+    global transformer
     anserini = importlib.import_module('.anserini', package='pyterrier') 
-    pipelines = importlib.import_module('.pipelines', package='pyterrier') 
+    cache = importlib.import_module('.cache', package='pyterrier')
     index = importlib.import_module('.index', package='pyterrier') 
-    transformer = importlib.import_module('.transformer', package='pyterrier') 
-    cache = importlib.import_module('.cache', package='pyterrier') 
-
+    io = importlib.import_module('.io', package='pyterrier')
+    model = importlib.import_module('.model', package='pyterrier')
+    pipelines = importlib.import_module('.pipelines', package='pyterrier') 
+    rewrite = importlib.import_module('.rewrite', package='pyterrier')
+    transformer = importlib.import_module('.transformer', package='pyterrier')
 
     # append the python helpers
     if packages is None:

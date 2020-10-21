@@ -2,7 +2,6 @@ import pandas as pd
 import unittest
 import pyterrier as pt
 import warnings
-import pyterrier.transformer as ptt;
 from matchpy import *
 
 class TestOperators(unittest.TestCase):
@@ -12,13 +11,44 @@ class TestOperators(unittest.TestCase):
         if not pt.started():
             pt.init()
 
+    def test_then_dataframe(self):
+        #this test is we can have DataFrame >> SOMETHINGELSE
+
+        topicsSource = pd.DataFrame([["1", "AA"]], columns=["qid", "query"])
+
+        def rewrite(topics):
+            for index, row in topics.iterrows():
+                row["query"] = row["query"] + " test"
+            return topics
+        fn1 = lambda topics : rewrite(topics)
+        import pyterrier.transformer as ptt
+        
+        topics = pd.DataFrame([["1", "A"]], columns=["qid", "query"])
+        rtr = ptt.SourceTransformer(topicsSource)(topics)
+        self.assertEqual(1, len(rtr))
+        self.assertTrue("query" in rtr.columns)
+        self.assertTrue("qid" in rtr.columns)
+        self.assertEqual(2, len(rtr.columns))  
+        self.assertEqual("AA", rtr.iloc[0]["query"])
+
+        sequence1 = topicsSource >> ptt.LambdaPipeline(fn1)
+        self.assertTrue(isinstance(sequence1[0], ptt.SourceTransformer))
+        rtr = sequence1(topics)
+        self.assertTrue("query" in rtr.columns)
+        self.assertTrue("qid" in rtr.columns)
+        self.assertEqual(2, len(rtr.columns))        
+        self.assertEqual(1, len(rtr))
+        self.assertEqual("AA test", rtr.iloc[0]["query"])
+
     def test_then(self):
+        
         def rewrite(topics):
             for index, row in topics.iterrows():
                 row["query"] = row["query"] + " test"
             return topics
         fn1 = lambda topics : rewrite(topics)
         fn2 = lambda topics : rewrite(topics)
+        import pyterrier.transformer as ptt
         sequence1 = ptt.LambdaPipeline(fn1) >> ptt.LambdaPipeline(fn2)
         sequence2 = ptt.LambdaPipeline(fn1) >> fn2
         sequence3 = ptt.LambdaPipeline(fn1) >> rewrite
@@ -40,6 +70,7 @@ class TestOperators(unittest.TestCase):
 
 
     def test_then_multi(self):
+        import pyterrier.transformer as ptt
         mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
         mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 10]], columns=["qid", "docno", "score"]))
         mock3 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 10]], columns=["qid", "docno", "score"]))
@@ -75,6 +106,7 @@ class TestOperators(unittest.TestCase):
 
 
     def test_mul(self):
+        import pyterrier.transformer as ptt
         mock = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
         for comb in [mock * 10, 10 * mock]:
             rtr = comb.transform(None)
@@ -84,6 +116,7 @@ class TestOperators(unittest.TestCase):
             self.assertEqual(50, rtr.iloc[0]["score"])
     
     def test_plus(self):
+        import pyterrier.transformer as ptt
         mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
         mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 10]], columns=["qid", "docno", "score"]))
 
@@ -97,13 +130,15 @@ class TestOperators(unittest.TestCase):
         self.assertEqual(15, rtr.iloc[0]["score"])
 
     def test_rank_cutoff(self):
-        mock1 = ptt.UniformTransformer( pd.DataFrame([["q1", "d2", 1, 5.1], ["q1", "d3", 2, 5.1]], columns=["qid", "docno", "rank", "score"]))
+        import pyterrier.transformer as ptt
+        mock1 = ptt.UniformTransformer( pd.DataFrame([["q1", "d2", 0, 5.1], ["q1", "d3", 1, 5.1]], columns=["qid", "docno", "rank", "score"]))
         cutpipe = mock1 % 1
         rtr = cutpipe.transform(None)
         self.assertEqual(1, len(rtr))
         
     def test_concatenate(self):
         import numpy as np
+        import pyterrier.transformer as ptt
         mock1 = ptt.UniformTransformer( pd.DataFrame([["q1", "d2", 2, 4.9, np.array([1,2])], ["q1", "d3", 1, 5.1, np.array([1,2])]], columns=["qid", "docno", "rank", "score", "bla"]))
         mock2 = ptt.UniformTransformer( pd.DataFrame([["q1", "d1", 1, 4.9, np.array([1,1])], ["q1", "d3", 2, 5.1, np.array([1,2])]], columns=["qid", "docno", "rank", "score", "bla"]))
 
@@ -122,6 +157,7 @@ class TestOperators(unittest.TestCase):
 
 
     def test_plus_multi_rewrite(self):
+        import pyterrier.transformer as ptt
         mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
         mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 10]], columns=["qid", "docno", "score"]))
         mock3 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 15]], columns=["qid", "docno", "score"]))
@@ -139,21 +175,32 @@ class TestOperators(unittest.TestCase):
 
 
     def test_union(self):
-        mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
-        mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc2", 10]], columns=["qid", "docno", "score"]))
+        import pyterrier.transformer as ptt
+        mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "q1texta", "doc1", 5, "body text"], ["q1", "q1texta", "doc3", 5, "body text"]], columns=["qid", "query", "docno", "score", "body"]))
+        mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "q1textb", "doc2", 10, "body text" ]], [["q1", "q1textb", "doc3", 10, "body text"]], columns=["qid", "query", "docno", "score", "body"]))
 
         combined = mock1 | mock2
         # we dont need an input, as both Identity transformers will return anyway
         rtr = combined.transform(None)
 
-        self.assertEqual(2, len(rtr))
+        self.assertEqual(3, len(rtr))
         self.assertTrue("q1" in rtr["qid"].values)
         self.assertTrue("doc1" in rtr["docno"].values)
         self.assertTrue("doc2" in rtr["docno"].values)
+        # in case we have different values for query for the same (qid, docno), we use only the first one
+        self.assertTrue("q1texta" in rtr["query"].values)
+        self.assertTrue("q1textb" in rtr[rtr.docno == "doc2"]["query"].values) 
+        self.assertTrue("q1textb" not in rtr[rtr.docno == "doc3"]["query"].values) 
+
+        for col in ["qid", "query", "docno", "body"]:
+            self.assertTrue(col in rtr.columns, "%s not found in cols" % col)
+        for col in ["rank", "score"]:
+            self.assertFalse(col in rtr.columns, "%s found in cols" % col)            
 
     def test_intersect(self):
-        mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
-        mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc2", 10], ["q1", "doc1", 10]], columns=["qid", "docno", "score"]))
+        import pyterrier.transformer as ptt
+        mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "q1texta", "doc1", 5, "body text"]], columns=["qid", "query", "docno", "score", "body"]))
+        mock2 = ptt.UniformTransformer(pd.DataFrame([["q1", "q1textb", "doc2", 10, "body text"], ["q1", "q1textb", "doc1", 10, "body text"]], columns=["qid", "query", "docno", "score", "body"]))
 
         combined = mock1 & mock2
         # we dont need an input, as both Identity transformers will return anyway
@@ -163,7 +210,16 @@ class TestOperators(unittest.TestCase):
         self.assertTrue("q1" in rtr["qid"].values)
         self.assertTrue("doc1" in rtr["docno"].values)
         self.assertFalse("doc2" in rtr["docno"].values)
+        # in case we have different values for query for the same (qid, docno), we use the left one
+        self.assertTrue("q1texta" in rtr["query"].values)
+        self.assertTrue("q1textb" not in rtr["query"].values)
 
+        for col in ["qid", "query", "docno", "body"]:
+            self.assertTrue(col in rtr.columns, "%s not found in cols" % col)
+
+        for col in ["rank", "score"]:
+            self.assertFalse(col in rtr.columns, "%s found in cols" % col)        
+        
     def test_feature_union_multi_actual(self):
         dataset = pt.get_dataset("vaswani")
         index = dataset.get_index()
@@ -189,6 +245,7 @@ class TestOperators(unittest.TestCase):
 
 
     def test_feature_union_multi(self):
+        import pyterrier.transformer as ptt
         mock0 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 0], ["q1", "doc2", 0]], columns=["qid", "docno", "score"]))
 
         mock1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5], ["q1", "doc2", 0]], columns=["qid", "docno", "score"]))
@@ -272,14 +329,15 @@ class TestOperators(unittest.TestCase):
         
         with warnings.catch_warnings(record=True) as w:
             _test_expression(mock123p)
-            assert "Got less results than expected" in str(w[-1].message)
+            assert "Got number of results" in str(w[-1].message)
         
         with warnings.catch_warnings(record=True) as w:
             _test_expression(mock12p3)
-            assert "Got less results than expected" in str(w[-1].message)
+            assert "Got number of results" in str(w[-1].message)
 
 
     def test_feature_union(self): 
+        import pyterrier.transformer as ptt
         mock_input = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 5]], columns=["qid", "docno", "score"]))
         
         mock_f1 = ptt.UniformTransformer(pd.DataFrame([["q1", "doc1", 10]], columns=["qid", "docno", "score"]))

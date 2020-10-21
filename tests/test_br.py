@@ -4,6 +4,22 @@ import os
 import unittest
 from .base import BaseTestCase
 
+def parse_res_file(filename):
+    results = []
+    with open(filename, 'r') as file:
+        for line in file:
+            split_line = line.strip("\n").split(" ")
+            results.append([split_line[0], split_line[2], float(split_line[4])])
+    return results
+
+def parse_query_result(filename):
+    results = []
+    with open(filename, 'rt') as file:
+        for line in file:
+            split_line = line.strip("\n").split(" ")
+            results.append([split_line[1], float(split_line[2])])
+    return results
+
 class TestBatchRetrieve(BaseTestCase):
 
     def test_form_dataframe_with_string(self):
@@ -42,11 +58,24 @@ class TestBatchRetrieve(BaseTestCase):
             self.assertTrue("qid" in result.columns)
             self.assertTrue("docno" in result.columns)
             self.assertTrue("score" in result.columns)
+            self.assertTrue("rank" in result.columns)
             self.assertEqual(1, len(result))
             row = result.iloc[0]
             self.assertEqual("q1", row["qid"])
             self.assertEqual("51", row["docno"])
+            self.assertEqual(pt.model.FIRST_RANK, row["rank"])
             self.assertTrue(row["score"] > 0)
+
+    def test_br_cutoff(self):
+        indexloc = self.here + "/fixtures/index/data.properties"
+        
+        input_set = pd.DataFrame([
+                    ["q1", "chemical"],
+                ],
+            columns=["qid", "query"])
+        retr = pt.BatchRetrieve(indexloc) % 10
+        result = retr.transform(input_set)
+        self.assertEqual(10, len(result))
 
     def test_candidate_set_two_doc(self):
         if not pt.check_version("5.3"):
@@ -70,7 +99,7 @@ class TestBatchRetrieve(BaseTestCase):
 
     # this also tests different index-like inputs, namely:
     # a String index location, an IndexRef, and an Index
-    def test_one_term_query_correct_docid_and_score(self):
+    def test_one_term_query_correct_docid_score_rank(self):
 
         indexloc = self.here + "/fixtures/index/data.properties"
         jindexref = pt.IndexRef.of(indexloc)
@@ -78,11 +107,15 @@ class TestBatchRetrieve(BaseTestCase):
         for indexSrc in (indexloc, jindexref, jindex):
             retr = pt.BatchRetrieve(indexSrc)
             result = retr.transform("light")
-            exp_result = pt.Utils.parse_query_result(os.path.dirname(
+            exp_result = parse_query_result(os.path.dirname(
                 os.path.realpath(__file__)) + "/fixtures/light_results")
+            i=0
             for index, row in result.iterrows():
                 self.assertEqual(row['docno'], exp_result[index][0])
                 self.assertAlmostEqual(row['score'], exp_result[index][1])
+                self.assertEqual(pt.model.FIRST_RANK + i, row["rank"])
+                i+=1
+
         jindex.close()
 
     def test_two_term_query_correct_qid_docid_score(self):
@@ -91,7 +124,7 @@ class TestBatchRetrieve(BaseTestCase):
         retr = pt.BatchRetrieve(indexref)
         input = pd.DataFrame([["1", "Stability"], ["2", "Generator"]], columns=['qid', 'query'])
         result = retr.transform(input)
-        exp_result = pt.Utils.parse_res_file(os.path.dirname(
+        exp_result = parse_res_file(os.path.dirname(
             os.path.realpath(__file__)) + "/fixtures/two_queries_result")
         for index, row in result.iterrows():
             self.assertEqual(row['qid'], exp_result[index][0])
@@ -100,7 +133,7 @@ class TestBatchRetrieve(BaseTestCase):
 
         input = pd.DataFrame([[1, "Stability"], [2, "Generator"]], columns=['qid', 'query'])
         result = retr.transform(input)
-        exp_result = pt.Utils.parse_res_file(os.path.dirname(
+        exp_result = parse_res_file(os.path.dirname(
             os.path.realpath(__file__)) + "/fixtures/two_queries_result")
         for index, row in result.iterrows():
             self.assertEqual(str(row['qid']), exp_result[index][0])

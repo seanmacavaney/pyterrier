@@ -34,9 +34,9 @@ See examples in the [indexing notebook](examples/notebooks/indexing.ipynb) [![Op
 # Retrieval and Evaluation
 
 ```python
-topics = pt.Utils.parse_trec_topics_file(topicsFile)
-qrels = pt.Utils.parse_qrels(qrelsFile)
-BM25_br = pt.BatchRetrieve(index, controls={"wmodel": "BM25"})
+topics = pt.io.read_topics(topicsFile)
+qrels = pt.io.read_qrels(qrelsFile)
+BM25_br = pt.BatchRetrieve(index, wmodel="BM25")
 res = BM25_br.transform(topics)
 pt.Utils.evaluate(res, qrels, metrics = ['map'])
 ```
@@ -54,11 +54,23 @@ There is a worked example in the [experiment notebook](examples/notebooks/experi
 
 # Pipelines
 
-Pyterrier makes it easy to develop complex [retrieval pipelines](pipelines.md) using Python operators to combine different retrieval approaches. Our [example pipelines](pipeline_examples.md) show how to conduct various common use cases. Each retrieval approach is a transformer, having one key method, `transform()`, which takes a single Pandas dataframe as input, and returns another dataframe. For more information, see the [Pyterrier data model](datamodel.md).
+Pyterrier makes it easy to develop complex [retrieval pipelines](pipelines.md) using Python operators such as `>>` to chain different retrieval components. Each retrieval approach is a transformer, having one key method, `transform()`, which takes a single Pandas dataframe as input, and returns another dataframe. Two examples might encapsulate applying the sequential dependence model, or a query expansion process:
+```python
+sdm_bm25 = pt.rewrite.SDM() >> pt.BatchRetrieve(indexref, wmodel="BM25")
+bo1_qe = BM25_br >> pt.rewrite.Bo1QueryExpansion() >> BM25_br
+````
+Our [example pipelines](pipeline_examples.md) show other common use cases. For more information, see the [Pyterrier data model](datamodel.md).
 
 # Learning to Rank
 
-Complex learning to rank pipelines, including for learning-to-rank, can be constructed using Pyterrier's operator language. There are several worked examples in the [learning-to-rank notebook](examples/notebooks/ltr.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/ltr.ipynb)
+Complex learning to rank pipelines, including for learning-to-rank, can be constructed using Pyterrier's operator language. For example, to combine two features and make them available for learning, we can use the `**` operator.
+```python
+two_features = BM25_br >> ( \
+  pt.BatchRetrieve(indexref, wmodel="DirichletLM") ** 
+  pt.BatchRetrieve(indexref, wmodel="PL2") \
+ )
+```
+There are several worked examples in the [learning-to-rank notebook](examples/notebooks/ltr.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/ltr.ipynb). Some pipelines can be automatically optimised - more detail about pipeline optimisation are included in our ICTIR 2020 paper.
 
 # Dataset API
 
@@ -83,7 +95,29 @@ index.getLexicon()["circuit"].getDocumentFrequency()
 
 There are lots of examples in the [index API notebook](examples/notebooks/index_api.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrier-org/pyterrier/blob/master/examples/notebooks/index_api.ipynb)
 
-## Credits
+# Open Source Licence
+
+PyTerrier is subject to the terms detailed in the Mozilla Public License Version 2.0. The Mozilla Public License can be found in the file [LICENSE.txt](LICENSE.txt). By using this software, you have agreed to the licence.
+
+# Citation Licence
+
+The source and binary forms of PyTerrier are subject to the following citation license: 
+
+By downloading and using PyTerrier, you agree to cite at the undernoted paper describing PyTerrier in any kind of material you produce where PyTerrier was used to conduct search or experimentation, whether be it a research paper, dissertation, article, poster, presentation, or documentation. By using this software, you have agreed to the citation licence.
+
+[Declarative Experimentation inInformation Retrieval using PyTerrier. Craig Macdonald and Nicola Tonellotto. In Proceedings of ICTIR 2020.](https://arxiv.org/abs/2007.14271)
+
+```bibtex
+@inproceesings{
+    author = {Craig Macdonald and Nicola Tonellotto},
+    title = {Declarative Experimentation inInformation Retrieval using PyTerrier},
+    booktitle = {Proceedings of ICTIR 2020},
+    year = {2020}
+}
+
+```
+
+# Credits
 
  - Alex Tsolov, University of Glasgow
  - Craig Macdonald, University of Glasgow

@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+
 from .utils import Utils
 from .index import Indexer
+from .model import FIRST_RANK
 from .transformer import TransformerBase, Symbol
 from tqdm import tqdm
 import deprecation
@@ -167,16 +169,15 @@ class BatchRetrieve(BatchRetrieveBase):
         # make sure queries are a String
         if queries["qid"].dtype == np.int64:
             queries['qid'] = queries['qid'].astype(str)
-
-
-        for index,row in tqdm(queries.iterrows(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            rank = 0
-            qid = str(row['qid'])
-            query = row['query']
+        
+        for row in tqdm(queries.itertuples(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            rank = FIRST_RANK
+            qid = str(row.qid)
+            query = row.query
             srq = self.manager.newSearchRequest(qid, query)
             
             for control, value in self.controls.items():
-                srq.setControl(control, value)
+                srq.setControl(control, str(value))
 
             # this is needed until terrier-core issue #106 lands
             if "applypipeline:off" in query:
@@ -237,7 +238,7 @@ class BatchRetrieve(BatchRetrieveBase):
         return "BR(" + self.controls["wmodel"] + ")"
 
     @deprecation.deprecated(deprecated_in="0.3.0",
-                        details="Please use pt.Utils.write_results_trec()")
+                        details="Please use pt.io.write_results(res, path, format='trec')")
     def saveResult(self, result, path, run_name=None):
         if run_name is None:
             run_name = self.controls["wmodel"]
@@ -259,11 +260,20 @@ def _mergeDicts(defaults, settings):
         KV.update(settings)
     return KV
 
+class TextIndexProcessor(TransformerBase):
+    '''
+        Creates a new MemoryIndex based on the contents of documents passed to it.
+        It then creates a new instance of the innerclass and passes the topics to that.
 
-class TextScorer(TransformerBase):
+        This class is the base class for TextScorer, but can be used in other settings as well, 
+        for instance query expansion based on text.
+    '''
 
-    def __init__(self, body_attr="body", background_index=None, **kwargs):
+    def __init__(self, innerclass, takes="queries", returns="docs", body_attr="body", background_index=None, **kwargs):
         #super().__init__(**kwargs)
+        self.innerclass = innerclass
+        self.takes = takes
+        self.returns = returns
         self.body_attr = body_attr
         if background_index is not None:
             self.background_indexref = parse_index_like(background_index)
@@ -274,9 +284,14 @@ class TextScorer(TransformerBase):
     def transform(self, topics_and_res):
         from . import DFIndexer, autoclass, IndexFactory
         from .index import IndexingType
-        documents = topics_and_res[["docno", self.body_attr]].drop_duplicates()
+        documents = topics_and_res[["docno", self.body_attr]].drop_duplicates(subset="docno")
         indexref = DFIndexer(None, type=IndexingType.MEMORY).index(documents[self.body_attr], documents["docno"])
+        docno2docid = { docno:id for id, docno in enumerate(documents["docno"]) }
         index_docs = IndexFactory.of(indexref)
+        docno2docid = {}
+        for i in range(0, index_docs.getCollectionStatistics().getNumberOfDocuments()):
+            docno2docid[index_docs.getMetaIndex().getItem("docno", i)] = i
+        assert len(docno2docid) == index_docs.getCollectionStatistics().getNumberOfDocuments(), "docno2docid size (%d) doesnt match index (%d)" % (len(docno2docid), index_docs.getCollectionStatistics().getNumberOfDocuments())
         
         # if a background index is set, we create an "IndexWithBackground" using both that and our new index
         if self.background_indexref is None:
@@ -285,18 +300,43 @@ class TextScorer(TransformerBase):
             index_background = IndexFactory.of(self.background_indexref)
             index = autoclass("org.terrier.python.IndexWithBackground")(index_docs, index_background)          
 
-        # we have provided the documents, so we dont need a docno or docid column that will confuse 
-        # BR and think it is re-ranking. In fact, we only need qid and query
         topics = topics_and_res[["qid", "query"]].dropna(axis=0, subset=["query"]).drop_duplicates()
+        
+        if self.takes == "queries":
+            # we have provided the documents, so we dont need a docno or docid column that will confuse 
+            # BR and think it is re-ranking. In fact, we only need qid and query
+            input = topics
+        elif self.takes == "docs":
+            # we have to pass the documents, but its desirable to have the docids mapped to the new index already
+            # build a mapping, as the metaindex may not have reverse lookups enabled
+            input = topics_and_res.copy()
+            # add the docid to the dataframe
+            input["docid"] = input.apply(lambda row: docno2docid[row["docno"]], axis=1)
+
 
         # and then just instantiate BR using the our new index 
         # we take all other arguments as arguments for BR
-        inner = BatchRetrieve(index, **(self.kwargs))
-        inner_res = inner.transform(topics)
-        if len(inner_res) < len(topics_and_res):
-            inner_res = topics_and_res[["qid", "docno"]].merge(inner_res, on=["qid", "docno"], how="left")
-            inner_res["score"] = inner_res["score"].fillna(value=0)
+        inner = self.innerclass(index, **(self.kwargs))
+        inner_res = inner.transform(input)
+
+        if self.returns == "docs":
+            # as this is a new index, docids are not meaningful externally, so lets drop them
+            inner_res.drop(columns=['docid'], inplace=True)
+
+            if len(inner_res) < len(topics_and_res):
+                inner_res = topics_and_res[["qid", "docno"]].merge(inner_res, on=["qid", "docno"], how="left")
+                inner_res["score"] = inner_res["score"].fillna(value=0)
+        elif self.returns == "queries":
+            if len(inner_res) < len(topics):
+                inner_res = topics.merge(on=["qid"], how="left")
+        else:
+            raise ValueError("returns attribute should be docs of queries")
         return inner_res
+
+class TextScorer(TextIndexProcessor):
+
+    def __init__(self, **kwargs):
+        super().__init__(BatchRetrieve, **kwargs)
 
 class FeaturesBatchRetrieve(BatchRetrieve):
     """
@@ -365,14 +405,14 @@ class FeaturesBatchRetrieve(BatchRetrieve):
         if queries["qid"].dtype == np.int64:
             queries['qid'] = queries['qid'].astype(str)
 
-        for index, row in tqdm(queries.iterrows(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            qid = str(row['qid'])
-            query = row['query']
+        for row in tqdm(queries.itertuples(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            qid = str(row.qid)
+            query = row.query
 
             srq = self.manager.newSearchRequest(qid, query)
 
             for control, value in self.controls.items():
-                srq.setControl(control, value)
+                srq.setControl(control, str(value))
 
             # this is needed until terrier-core issue #106 lands
             if "applypipeline:off" in query:

@@ -1,9 +1,9 @@
 
 import types
-import itertools
-from tqdm import tqdm
 from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace_all, Pattern, CustomConstraint
 from warnings import warn
+import pandas as pd
+from .model import add_ranks
 
 LAMBDA = lambda:0
 def is_lambda(v):
@@ -12,15 +12,12 @@ def is_lambda(v):
 def is_transformer(v):
     if isinstance(v, TransformerBase):
         return True
-    if 'transform' in dir(v):
-        return True
     return False
 
 def get_transformer(v):
     ''' 
         Used to coerce functions, lambdas etc into transformers 
     '''
-
     if isinstance(v, Wildcard):
         # get out of jail for matchpy
         return v
@@ -30,13 +27,17 @@ def get_transformer(v):
         return LambdaPipeline(v)
     if isinstance(v, types.FunctionType):
         return LambdaPipeline(v)
-    raise ValueError("Passed parameter %s cannot be coerced into a transformer" % str(v))
+    if isinstance(v, pd.DataFrame):
+        return SourceTransformer(v)
+    raise ValueError("Passed parameter %s of type %s cannot be coerced into a transformer" % (str(v), type(v)))
 
 rewrites_setup = False
 rewrite_rules = []
 
 def setup_rewrites():
     from .batchretrieve import BatchRetrieve, FeaturesBatchRetrieve
+    global rewrites_setup
+    global rewrite_rules
     #three arbitrary "things".
     x = Wildcard.dot('x')
     xs = Wildcard.plus('xs')
@@ -113,156 +114,34 @@ class TransformerBase(object):
     
     # Set id parameter for transformers
     def __init__(self, **kwargs):
-
         if 'id' in kwargs:
           self.id = str(kwargs['id'])
-        
+
     # Get specific parameter value by parameter's name    
     def get_parameter(self,name):
         if hasattr(self,name):
-          return getattr(self,name)
+            return getattr(self,name)
         else:
-          raise ValueError("Invalid parameter name %s for estimator %s. " + 
-                      "Check the list of available parameters "
-                    %(str(name), self))
-    
+            raise ValueError("Invalid parameter name %s for estimator %s. " + 
+                      "Check the list of available parameters " %(str(name), self))
+
     # Set the value for specific parameter
     def set_parameter(self,name,value):
-      if hasattr(self,name):
-        setattr(self,name,value)
-      else:
-        raise ValueError('Invalid parameter name %s for estimator %s. '
-                    'Check the list of available parameters '
-                  %(name, self))
-     
-    # The evaluation method for calculating the mean nDCG score across all the queries
-    def mean_ndcg(self, res, qrels):
-      from sklearn.metrics import ndcg_score
-      ndcgs=[]
-      joined = res.merge(qrels, how='left', on=['qid', 'docno'])
-      for qid, qid_group in joined.fillna(0).groupby('qid'):
-        ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
-      return  sum(ndcgs) / len(ndcgs)
-    
-    # The evaluation method for calculating the nDCG scores for each query
-    def ndcg_score(self, res, qrels):
-      from sklearn.metrics import ndcg_score
-      import pandas as pd
-      import numpy as np
-      ndcgs=[]
-      qids=[]
-      joined = res.merge(qrels, how='left', on=['qid', 'docno'])
-      for qid, qid_group in joined.fillna(0).groupby('qid'):
-        ndcgs.append(ndcg_score([qid_group["label"].values], [qid_group["score"].values]))
-        qids.append(qid)
-      ndcgs_df = pd.DataFrame({'qid':qids, 'ndcg':ndcgs})
-      ndcgs_df.sort_values(by="qid")
-      return  ndcgs_df
-    
-    # The algorithm for grid search
-    def GridSearch(self, topics, qrels, param_map, metric="ndcg"):
-      candi_dict = {}
-      eval_list = []
-
-      #Store the all parameter names and candidate values into a dictionary
-      #such as {('id1', 'wmodel'): ['BM25', 'PL2'], ('id1', 'c'): [0.1, 0.2, 0.3], ('id2', 'lr'): [0.001, 0.01, 0.1]}
-      for comp in param_map:
-        for param in param_map[comp]:
-          candi_dict[(comp,param)] = param_map[comp][param]
-
-      #Iterate the candidate values in different combinations
-      items = sorted(candi_dict.items())
-      keys,values = zip(*items)
-      for v in tqdm(itertools.product(*values),total=len(list(itertools.product(*values))),desc = "progress meter",mininterval = 0.3):
-        #'params' is every combination of candidates
-        params = dict(zip(keys,v))
-        #parameter_score_tuple = ()
-        parameter_score_list = []
-        
-        #Set the parameter value in the corresponding transformer of the pipeline
-        for pipe_id,param_name in params:
-          parameter_tuple = ()
-          if not hasattr(self,"id"):
-            self.get_transformer(pipe_id).set_parameter(param_name,params[pipe_id,param_name])#If wrong, can change to params[(pipe_id,param_id)];For setting parameters for transformers in pipeline in different parameters combinations.
-          else:
-            self.set_parameter(param_name,params[pipe_id,param_name])
-          parameter_tuple = (pipe_id,param_name,params[pipe_id,param_name])#such as ('id1', 'wmodel', 'BM25')
-          parameter_score_list.append(parameter_tuple)
-         
-        #using topics and evaluation
-        res = self.transform(topics)
-        eval_score = self.mean_ndcg(res,qrels)
-        #parameter_score_tuple += (eval_score,) #such as (('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654), and 0.2654 is the evaluation score.
-        parameter_score_list.append(eval_score) #such as [('id1', 'wmodel', 'BM25'),('id1', 'c', 0.2),('id2', 'lr', '0.001'),0.2654], and 0.2654 is the evaluation score.
-        eval_list.append(parameter_score_list)
-
-      best_score = 0
-      max_index = 0
-      for i in range(len(eval_list)):
-        if eval_list[i][-1] > best_score:
-          best_score = eval_list[i][-1]
-          max_index = i
-      best_params = eval_list[max_index][0:-1]
-      
-      for i in range(len(best_params)):
-        if not hasattr(self,"id"):
-          self.get_transformer(best_params[i][0]).set_parameter(best_params[i][1],best_params[i][2])
+        if hasattr(self,name):
+            setattr(self,name,value)
         else:
-          self.set_parameter(best_params[i][1],best_params[i][2])
-      best_transformer = self
-      test_res = self.transform(topics)
-      test_eval_df = self.ndcg_score(test_res,qrels)
-      
-      #print evaluation results for each product
-      print("The evaluation results:",eval_list)
-      #print the best score
-      print("The best score is: ",best_score)
-      #print the best param map  
-      print("The best parameters map is :")
-      for i in range(len(best_params)):
-        print(best_params[i])
-        
-      print("The evaluation results of best transformer:")
-      print(test_eval_df)
+            raise ValueError('Invalid parameter name %s for estimator %s. '+
+                    'Check the list of available parameters ' %(name, self))
+
+    def get_transformer(self,id):
+        if hasattr(self,"id") and self.id == id:
+            return self
+        return None
     
-      return best_transformer,test_eval_df
-    
-    # The algorithm for grid search with cross validation
-    def gridsearchCV(self, topics, qrels, param_map, metric='ndcg', **kwargs):
-      from sklearn.model_selection import KFold
-      import numpy as np
-      import pandas as pd
-      KF=KFold(n_splits=kwargs['num_folds']) #n_splits can be tested and changed
-      all_split_scores = pd.DataFrame({})
-      
-      for train_index,test_index in KF.split(topics):
-        # print("TRAIN:",train_index,"TEST:",test_index)
-        topics_train,topics_test=topics.iloc[train_index],topics.iloc[test_index]
-        qrels_train = pd.DataFrame()
-        qrels_test = pd.DataFrame()
-        for i in train_index:
-          qrels_train=pd.concat([qrels_train,qrels[qrels['qid']==topics.iloc[i].qid]])
-        for i in test_index:
-          qrels_test=pd.concat([qrels_test,qrels[qrels['qid']==topics.iloc[i].qid]])
-        # print(topics_train,topics_test)
-        # print(qrels_train,qrels_test)
-
-        best_transformer, test_df = self.GridSearch(topics_train,qrels_train,param_map,metric="ndcg")
-#         for i in range(len(best_param)):
-#           if not hasattr(self,"id"):
-#             self.get_transformer(best_param[i][0]).set_parameter(best_param[i][1],best_param[i][2])
-#           else:
-#             self.set_parameter(best_param[i][1],best_param[i][2])
-
-        test_res = best_transformer.transform(topics_test)
-        test_eval_df = self.ndcg_score(test_res,qrels_test)
-        all_split_scores = pd.concat([all_split_scores,test_eval_df],axis=1)
-      return all_split_scores  
-
     def transform(self, topics_or_res):
         '''
             Abstract method for all transformations. Typically takes as input a Pandas
-            DataFrame, and also returns one also.
+            DataFrame, and also returns one.
         '''
         pass
 
@@ -314,7 +193,26 @@ class TransformerBase(object):
     def __invert__(self):
         from .cache import ChestCacheTransformer
         return ChestCacheTransformer(self)
-    
+
+    def transform_gen(self, input, batch_size=1):
+        docno_provided = "docno" in input.columns
+        docid_provided = "docid" in input.columns
+        
+        if docno_provided or docid_provided:
+            queries = input[["qid"]].drop_duplicates()
+        else:
+            queries = input
+        batch=[]      
+        for query in queries.itertuples():
+            if len(batch) == batch_size:
+                batch_topics = pd.concat(batch)
+                batch=[]
+                yield self.transform(batch_topics)
+            batch.append(input[input["qid"] == query.qid])
+        if len(batch) > 0:
+            batch_topics = pd.concat(batch)
+            yield self.transform(batch_topics)
+
 class EstimatorBase(TransformerBase):
     '''
         This is a base class for things that can be fitted.
@@ -331,6 +229,31 @@ class IdentityTransformer(TransformerBase, Operation):
     
     def transform(self, topics):
         return topics
+
+class SourceTransformer(TransformerBase, Operation):
+    '''
+    A Transformer that can be used when results have been saved in a dataframe.
+    It will select results on qid.
+    If a query column is in the dataframe passed in the constructor, this will override any query
+    column in the topics dataframe passed to the transform() method.
+    '''
+    arity = Arity.nullary
+
+    def __init__(self, rtr, **kwargs):
+        super().__init__(operands=[], **kwargs)
+        self.operands=[]
+        self.df = rtr[0]
+        self.df_contains_query = "query" in self.df.columns
+        assert "qid" in self.df.columns
+    
+    def transform(self, topics):
+        assert "qid" in topics.columns
+        columns=["qid"]
+        topics_contains_query = "query" in topics.columns
+        if not self.df_contains_query and topics_contains_query:
+            columns.append("query")
+        rtr = topics[columns].merge(self.df, on="qid")
+        return rtr
 
 # this class is useful for testing. it returns a copy of the same
 # dataframe each time transform is called
@@ -358,13 +281,12 @@ class BinaryTransformerBase(TransformerBase,Operation):
         self.right = operands[1]
      
     # The method for fetching the transformer by transformer's id in binary pipelines.
-    def get_transformer(self,name):
-        if name == self.left.id:
+    def get_transformer(self,id):
+        if hasattr(self.left, "id") and id == self.left.id:
           return self.left
-        elif name == self.right.id:
+        elif hasattr(self.right, "id") and id == self.right.id:
           return self.right
-        else:
-          return None
+        return None
 
 class NAryTransformerBase(TransformerBase,Operation):
     arity = Arity.polyadic
@@ -388,14 +310,14 @@ class NAryTransformerBase(TransformerBase,Operation):
         return len(self.models)
     
     # The method for fetching the transformer by transformer's id in complex pipelines.
-    def get_transformer(self,name):
+    def get_transformer(self,id):
       if hasattr(self,"id"):
-        if self.id == name:
+        if self.id == id:
             return self
       else:
           for m in self.models:
             if hasattr(m,"id"):
-              if name == m.id:
+              if id == m.id:
                 return m
             else:
               rtr = m.get_transformer(name)
@@ -404,6 +326,14 @@ class NAryTransformerBase(TransformerBase,Operation):
       return None
 
 class SetUnionTransformer(BinaryTransformerBase):
+    '''      
+        This operator makes a retrieval set that includes documents that occur in the union (either) of both retrieval sets. 
+        For instance, let left and right be pandas dataframes, both with the columns = [qid, query, docno, score], 
+        left = [1, "text1", doc1, 0.42] and right = [1, "text1", doc2, 0.24]. 
+        Then, left | right will be a dataframe with only the columns [qid, query, docno] and two rows = [[1, "text1", doc1], [1, "text1", doc2]].
+                
+        In case of duplicated both containing (qid, docno), only the first occurrence will be used.
+    '''
     name = "Union"
 
     def transform(self, topics):
@@ -413,19 +343,31 @@ class SetUnionTransformer(BinaryTransformerBase):
         assert isinstance(res1, pd.DataFrame)
         assert isinstance(res2, pd.DataFrame)
         rtr = pd.concat([res1, res2])
-        rtr = rtr.drop_duplicates(subset=["qid", "docno"])
-        rtr = rtr.sort_values(by=['qid', 'docno'])
-        rtr = rtr.drop(columns=["score"])
+        
+        on_cols = ["qid", "docno"]     
+        rtr = rtr.drop_duplicates(subset=on_cols)
+        rtr = rtr.sort_values(by=on_cols)
+        rtr.drop(columns=["score", "rank"], inplace=True, errors='ignore')
         return rtr
 
 class SetIntersectionTransformer(BinaryTransformerBase):
+    '''
+        This operator makes a retrieval set that only includes documents that occur in the intersection of both retrieval sets. 
+        For instance, let left and right be pandas dataframes, both with the columns = [qid, query, docno, score], 
+        left = [[1, "text1", doc1, 0.42]] (one row) and right = [[1, "text1", doc1, 0.24],[1, "text1", doc2, 0.24]] (two rows).
+        Then, left & right will be a dataframe with only the columns [qid, query, docno] and one single row = [[1, "text1", doc1]].
+                
+        For columns other than (qid, docno), only the left value will be used.
+    '''
     name = "Intersect"
     
     def transform(self, topics):
         res1 = self.left.transform(topics)
-        res2 = self.right.transform(topics)
-        # NB: there may be other duplicate columns
-        rtr = res1.merge(res2, on=["qid", "docno"]).drop(columns=["score_x", "score_y"])
+        res2 = self.right.transform(topics)  
+        
+        on_cols = ["qid", "docno"]
+        rtr = res1.merge(res2, on=on_cols, suffixes=('','_y'))
+        rtr.drop(columns=["score", "rank"], inplace=True, errors='ignore')
         return rtr
 
 class CombSumTransformer(BinaryTransformerBase):
@@ -437,6 +379,7 @@ class CombSumTransformer(BinaryTransformerBase):
         merged = res1.merge(res2, on=["qid", "docno"])
         merged["score"] = merged["score_x"] + merged["score_y"]
         merged = merged.drop(columns=['score_x', 'score_y'])
+        merged = add_ranks(merged)
         return merged
 
 class ConcatenateTransformer(BinaryTransformerBase):
@@ -470,12 +413,10 @@ class ConcatenateTransformer(BinaryTransformerBase):
 
         # now bring together and re-sort
         # this sort should match trec_eval
-        rtr = pd.concat([res1, remainder]).sort_values(["qid", "score", "docno"], ascending=[True, False, True]) 
+        rtr = pd.concat([res1, remainder]).sort_values(by=["qid", "score", "docno"], ascending=[True, False, True]) 
 
         # recompute the ranks
-        rtr = rtr.drop(columns=["rank"])
-        rtr["rank"] = rtr.groupby("qid").rank(ascending=False)["score"].astype(int)
-
+        rtr = add_ranks(rtr)
         return rtr
 
 class ScalarProductTransformer(BinaryTransformerBase):
@@ -507,13 +448,16 @@ class RankCutoffTransformer(BinaryTransformerBase):
         super().__init__(operands, **kwargs)
         self.transformer = operands[0]
         self.cutoff = operands[1]
+        if self.cutoff.value % 10 == 9:
+            warn("Rank cutoff off-by-one bug #66 now fixed, but you used a cutoff ending in 9. Please check your cutoff value. ", DeprecationWarning, 2)
 
     def transform(self, topics_and_res):
         res = self.transformer.transform(topics_and_res)
         if not "rank" in res.columns:
             assert False, "require rank to be present in the result set"
 
-        res = res[res["rank"] <= self.cutoff.value]
+        # this assumes that the minimum rank cutoff is model.FIRST_RANK, i.e. 0
+        res = res[res["rank"] < self.cutoff.value]
         return res
 
 class LambdaPipeline(TransformerBase):
@@ -566,8 +510,8 @@ class FeatureUnionPipeline(NAryTransformerBase):
                 if not "score" in res.columns:
                     raise ValueError("Results from %s did not include either score or features columns, found columns were %s" % (repr(m), str(res.columns)) )
 
-                if len(res) < num_results:
-                    warn("Got less results than expected from %s, expected %d received %d, missing values will have 0" % (repr(m), num_results, len(results)))
+                if len(res) != num_results:
+                    warn("Got number of results different expected from %s, expected %d received %d, feature scores for any missing documents be 0, extraneous documents will be removed" % (repr(m), num_results, len(res)))
                     all_results[i] = res = inputRes[["qid", "docno"]].merge(res, on=["qid", "docno"], how="left")
                     res["score"] = res["score"].fillna(value=0)
 
@@ -592,21 +536,18 @@ class FeatureUnionPipeline(NAryTransformerBase):
             return rtr
         
         from functools import reduce
-        # for r in all_results:
-        #     print(r.columns.values)
-        #print("%d all_results is merging %d" % (id(self),  len(all_results)))
         final_DF = reduce(_reduce_fn, all_results)
-        #print(final_DF)
-        #final merge - this brings us the score attribute
 
+        # final_DF should have the features column
+        assert "features" in final_DF.columns
+
+        # we used .copy() earlier, inputRes should still have no features column
         assert not "features" in inputRes.columns
 
-        #print(str(id(self)) +" inputRes=" + str(inputRes.columns.values) + " " + str(id(inputRes)))
-        #print(str(id(self)) +" final_DF=" + str(final_DF.columns.values))
-
+        # final merge - this brings us the score attribute from any previous transformer
         final_DF = inputRes.merge(final_DF, on=["qid", "docno"])
+        # remove the duplicated columns
         final_DF = final_DF.loc[:,~final_DF.columns.duplicated()]
-        #print("%d final_DF=%s " % (id(self), str(final_DF.columns.values) ))
         assert not "features_x" in final_DF.columns 
         assert not "features_y" in final_DF.columns 
         return final_DF
