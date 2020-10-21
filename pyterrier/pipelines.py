@@ -83,7 +83,7 @@ def GridSearch(pipeline : TransformerBase, topics : pd.DataFrame, qrels : pd.Dat
 
     for tran_id in param_map:
         if pipeline.get_transformer(tran_id) is None:
-            raise KeyError("No such transformer with id %s in retrieval pipeline %s", (tran_id, str(pipeline)))
+            raise KeyError("No such transformer with id %s in retrieval pipeline %s" % (tran_id, str(pipeline)))
 
     # Iterate the candidate values in different combinations
     items = sorted(candi_dict.items())    
@@ -119,7 +119,7 @@ def GridSearch(pipeline : TransformerBase, topics : pd.DataFrame, qrels : pd.Dat
             max_index = i
     best_params, _ = eval_list[max_index]
     
-    best_params_map = defaultdict(dict)
+    best_params_map = { tran_id : {} for tran_id in param_map }
     for tran_id, param_name, param_value in best_params:
         best_params_map[tran_id][param_name] = param_value
 
