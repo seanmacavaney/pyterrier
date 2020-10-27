@@ -7,7 +7,7 @@ MAVEN_BASE_URL = "https://repo1.maven.org/maven2/"
 JITPACK_BASE_URL = "https://jitpack.io/"
 
 # obtain a file from maven
-def downloadfile(orgName, packageName, version, file_path, artifact="jar"):
+def downloadfile(orgName : str, packageName : str, version : str, file_path : str, artifact : str = "jar"):
     orgName = orgName.replace(".", "/")
     suffix = ""
     ext = "jar"
@@ -46,7 +46,7 @@ def downloadfile(orgName, packageName, version, file_path, artifact="jar"):
     return (os.path.join(file_path, filename))
 
 # returns the latest version
-def latest_version_num(orgName, packageName):
+def latest_version_num(orgName : str, packageName : str):
     orgName = orgName.replace(".", "/")
     if "com/github" in orgName:
         # its jitpack

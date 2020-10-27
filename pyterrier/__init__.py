@@ -3,7 +3,7 @@ __version__ = "0.3.0.dev"
 import os
 from .bootstrap import _logging, setup_terrier, setup_jnius
 from . import datasets
-
+from typing import List, Union
 import importlib
 
 #sub modules
@@ -25,7 +25,16 @@ properties = None
 
 HOME_DIR = None
 
-def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, logging='WARN', home_dir=None, boot_packages=[]):
+def init(
+        version : str = None, 
+        mem : int = None, 
+        jvm_opts : List[str] = [], 
+        boot_packages : List[str] = [],
+        packages : List[str] = [], 
+        redirect_io : bool = True, 
+        logging : str = 'WARN', 
+        home_dir : str = None
+        ):
     """
     Function necessary to be called before Terrier classes and methods can be used.
     Loads the Terrier.jar file and imports classes. Also finds the correct version of Terrier to download if no version is specified.
@@ -33,10 +42,11 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     Args:
         version(str): Which version of Terrier to download. Default=None.
             If None, find the newest Terrier version in maven and download it.
-        mem(str): Maximum memory allocated for java heap in MB. Default is 1/4 of physical memory.
-        packages(list(str)): Extra maven package coordinates files to load. Default=[]. More information at https://github.com/terrier-org/terrier-core/blob/5.x/doc/terrier_develop.md
+        mem(int): Maximum memory allocated for java heap in MB. Default is 1/4 of physical memory.
         jvm_opts(list(str)): Extra options to pass to the JVM. Default=[].
-        redirect_io(boolean): If True, the Java System.out and System.err will be redirected to Pythons sys.out and sys.err. Default=True.
+        boot_packages(list(str)): Extra maven package coordinates files to in the JVM boot classpath. Default=[]. 
+        packages(list(str)): Extra maven package coordinates files to load. Default=[]. More information at https://github.com/terrier-org/terrier-core/blob/5.x/doc/terrier_develop.md
+        redirect_io(bool): If True, the Java System.out and System.err will be redirected to Pythons sys.out and sys.err. Default=True.
         logging(str): the logging level to use.
                       Can be one of 'INFO', 'DEBUG', 'TRACE', 'WARN', 'ERROR'. The latter is the quietest.
                       Default='WARN'.
@@ -84,6 +94,12 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     properties = autoclass('java.util.Properties')()
     ApplicationSetup = autoclass('org.terrier.utility.ApplicationSetup')
 
+    setup_jnius()
+    globals()["IndexFactory"] = autoclass("org.terrier.structures.IndexFactory")
+    globals()["IndexRef"] = autoclass("org.terrier.querying.IndexRef")
+    globals()["Index"] = autoclass("org.terrier.structures.Index")
+    
+
     from .batchretrieve import BatchRetrieve, FeaturesBatchRetrieve
     from .utils import Utils
     from .datasets import get_dataset, list_datasets
@@ -94,7 +110,7 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["autoclass"] = autoclass
     globals()["cast"] = cast
     globals()["ApplicationSetup"] = ApplicationSetup
-
+    globals()["IndexingType"] = IndexingType
     
     global anserini
     global cache
@@ -127,7 +143,6 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
         # this ensures that the python stdout/stderr and the Java are matched
         redirect_stdouterr()
     _logging(logging)
-    setup_jnius()
 
     globals()["get_dataset"] = get_dataset
     globals()["list_datasets"] = list_datasets
@@ -144,16 +159,13 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["Utils"] = Utils
     globals()["LTR_pipeline"] = LTR_pipeline
     globals()["XGBoostLTR_pipeline"] = XGBoostLTR_pipeline
-    globals()["IndexFactory"] = autoclass("org.terrier.structures.IndexFactory")
-    globals()["IndexRef"] = autoclass("org.terrier.querying.IndexRef")
-    globals()["IndexingType"] = IndexingType
 
     firstInit = True
 
-def started():
+def started() -> bool:
     return(firstInit)
 
-def check_version(min):
+def check_version(min : Union[str,float,int]) -> bool:
     from jnius import autoclass
     from packaging.version import Version
     min = Version(str(min))
@@ -164,7 +176,7 @@ def redirect_stdouterr():
     from . import bootstrap
     bootstrap.redirect_stdouterr()
 
-def logging(level):
+def logging(level : str):
     from . import bootstrap
     bootstrap.logging(level)
 
@@ -179,11 +191,11 @@ def set_properties(kwargs):
         properties.put(control, value)
     ApplicationSetup.bootstrapInitialisation(properties)
 
-def run(cmd, args=[]):
+def run(cmd, args : List[str] = []):
     from jnius import autoclass
     autoclass("org.terrier.applications.CLITool").main([cmd] + args)
 
-def extend_classpath(mvnpackages):
+def extend_classpath(mvnpackages : List[str]):
     assert check_version(5.3), "Terrier 5.3 required for this functionality"
     if isinstance(mvnpackages, str):
         mvnpackages = [mvnpackages]

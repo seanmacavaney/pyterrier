@@ -3,11 +3,13 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
-from .index import Indexer
+from . import Index, IndexRef
 from .transformer import TransformerBase, Symbol
 from .model import coerce_queries_dataframe
 from tqdm import tqdm
 import deprecation
+
+from typing import Union, Any, List, Dict
 
 # import time
 
@@ -27,6 +29,7 @@ def _matchop(query):
 def parse_index_like(index_location):
     JIR = autoclass('org.terrier.querying.IndexRef')
     JI = autoclass('org.terrier.structures.Index')
+    from .index import Indexer
 
     if isinstance(index_location, JIR):
         return index_location
@@ -99,7 +102,14 @@ class BatchRetrieve(BatchRetrieveBase):
             num_results(int): Number of results to retrieve. 
             metadata(list): What metadata to retrieve
     """
-    def __init__(self, index_location, controls=None, properties=None, metadata=["docno"],  num_results=None, wmodel=None, **kwargs):
+    def __init__(self, 
+            index_location : Union[IndexRef, Index, str], 
+            controls : Dict[str, Any] =None, 
+            properties : Dict[str, Any] = None, 
+            metadata : List[str] = ["docno"],  
+            num_results : int = None, 
+            wmodel : str =None, 
+            **kwargs):
         super().__init__(kwargs)
         
         self.indexref = parse_index_like(index_location)
@@ -261,7 +271,7 @@ class TextIndexProcessor(TransformerBase):
         for instance query expansion based on text.
     '''
 
-    def __init__(self, innerclass, takes="queries", returns="docs", body_attr="body", background_index=None, **kwargs):
+    def __init__(self, innerclass : TransformerBase, takes : str = "queries", returns : str = "docs", body_attr : str = "body", background_index=None, **kwargs):
         #super().__init__(**kwargs)
         self.innerclass = innerclass
         self.takes = takes
@@ -347,7 +357,12 @@ class FeaturesBatchRetrieve(BatchRetrieve):
     FBR_default_controls["matching"] = "FatFeaturedScoringMatching,org.terrier.matching.daat.FatFull"
     FBR_default_properties = BatchRetrieve.default_properties.copy()
 
-    def __init__(self, index_location, features, controls=None, properties=None, **kwargs):
+    def __init__(self, 
+            index_location : Union[IndexRef, Index, str], 
+            features : List[str], 
+            controls : Dict[str, Any] =None, 
+            properties : Dict[str, Any] = None, 
+            **kwargs):
         """
             Init method
 

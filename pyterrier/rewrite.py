@@ -21,7 +21,7 @@ class SDM(TransformerBase):
         This transformer changes the query. It must be followed by a Terrier Retrieve() transformer.
     '''
 
-    def __init__(self, verbose = 0, remove_stopwords = True, prox_model = None, **kwargs):
+    def __init__(self, verbose : int = 0, remove_stopwords : bool = True, prox_model : str = None, **kwargs):
         super().__init__(**kwargs)
         self.verbose = 0
         self.prox_model = prox_model
@@ -79,7 +79,7 @@ class QueryExpansion(TransformerBase):
         A base class for applying different types of query expansion using Terrier's classes
     '''
 
-    def __init__(self, index_like, fb_terms=10, fb_docs=3, qeclass="org.terrier.querying.QueryExpansion", verbose=0, **kwargs):
+    def __init__(self, index_like, fb_terms : int =10, fb_docs : int =3, qeclass : str = "org.terrier.querying.QueryExpansion", verbose : int =0, **kwargs):
         super().__init__(**kwargs)
         self.verbose = verbose
         if isinstance(qeclass, str):
@@ -190,7 +190,7 @@ class RM3(QueryExpansion):
     '''
         Performs query expansion using RM3 relevance models
     '''
-    def __init__(self, *args, fb_terms=10, fb_docs=3, **kwargs):
+    def __init__(self, *args, fb_terms: int = 10, fb_docs : int =3, **kwargs):
         global terrier_prf_package_loaded
 
         #if not terrier_prf_package_loaded:
@@ -220,7 +220,7 @@ class AxiomaticQE(QueryExpansion):
     '''
         Performs query expansion using axiomatic query expansion
     '''
-    def __init__(self, *args, fb_terms=10, fb_docs=3, **kwargs):
+    def __init__(self, *args, fb_terms : int =10, fb_docs : int =3, **kwargs):
         global terrier_prf_package_loaded
 
         #if not terrier_prf_package_loaded:

@@ -2,14 +2,12 @@
 This file contains all the indexers.
 """
 
-# from jnius import autoclass, cast, PythonJavaClass, java_method
 from jnius import autoclass, PythonJavaClass, java_method, cast
-# from .utils import *
 import pandas as pd
-# import numpy as np
 import os
 import enum
 import json
+from typing import List
 
 StringReader = None
 HashMap = None
@@ -105,7 +103,13 @@ class Indexer:
             "trec.collection.class": "TRECCollection",
     }
 
-    def __init__(self, index_path, *args, blocks=False, overwrite=False, type=IndexingType.CLASSIC, **kwargs):
+    def __init__(self, 
+            index_path : str, 
+            *args, 
+            blocks : bool = False, 
+            overwrite : bool = False, 
+            type : IndexingType = IndexingType.CLASSIC, 
+            **kwargs):
         """
         Init method
 
@@ -301,7 +305,7 @@ class DFIndexer(Indexer):
         properties: A Terrier Properties object, which is a hashtable with properties and their values
         overwrite(bool): If True the index() method of child Indexer will overwrite any existing index
     """
-    def index(self, text, *args, **kwargs):
+    def index(self, text, *args, **kwargs) -> IndexRef:
         """
         Index the specified
 
@@ -441,7 +445,7 @@ class IterDictIndexer(Indexer):
         properties: A Terrier Properties object, which is a hashtable with properties and their values
         overwrite(bool): If True the index() method of child Indexer will overwrite any existing index
     """
-    def index(self, it, fields=('text',), meta=('docno',), meta_lengths=None):
+    def index(self, it, fields=('text',), meta=('docno',), meta_lengths=None) -> IndexRef:
         """
         Index the specified iter of dicts with the (optional) specified fields
 
@@ -492,7 +496,13 @@ class TRECCollectionIndexer(Indexer):
         verbose(bool): If True, will display a progress bar based on files indexed
     """
 
-    def __init__(self, index_path, blocks=False, overwrite=False, type=IndexingType.CLASSIC, collection="trec", verbose=False):
+    def __init__(self, 
+            index_path : str, 
+            blocks : bool = False, 
+            overwrite : bool = False, 
+            type : IndexingType = IndexingType.CLASSIC, 
+            collection : str = "trec", 
+            verbose : bool = False):
         """
         Init method
 
@@ -511,7 +521,7 @@ class TRECCollectionIndexer(Indexer):
         self.verbose = verbose
     
 
-    def index(self, files_path):
+    def index(self, files_path : List[str]) -> IndexRef:
         """
         Index the specified TREC formatted files
 
@@ -558,7 +568,7 @@ class FilesIndexer(Indexer):
         self.properties["indexer.meta.forward.keys"]="docno,filename"
         self.properties["indexer.meta.forward.keylens"]="20,512"
 
-    def index(self, files_path):
+    def index(self, files_path : List[str]) -> IndexRef:
         """
         Index the specified TREC formatted files
 

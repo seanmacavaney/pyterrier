@@ -4,6 +4,7 @@ from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace
 from warnings import warn
 import pandas as pd
 from .model import add_ranks
+from typing import Union, Any, Generator
 
 LAMBDA = lambda:0
 def is_lambda(v):
@@ -118,7 +119,7 @@ class TransformerBase:
         '''
         pass
 
-    def compile(self):
+    def compile(self) -> 'TransformerBase':
         '''
             Rewrites this pipeline by applying of the Matchpy rules in rewrite_rules.
         '''
@@ -127,47 +128,47 @@ class TransformerBase:
         print("Applying %d rules" % len(rewrite_rules))
         return replace_all(self, rewrite_rules)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> pd.DataFrame:
         return self.transform(*args, **kwargs)
 
-    def __rshift__(self, right):
+    def __rshift__(self, right) -> 'TransformerBase':
         return ComposedPipeline(self, right)
 
-    def __rrshift__(self, left):
+    def __rrshift__(self, left) -> 'TransformerBase':
         return ComposedPipeline(left, self)
 
-    def __add__(self, right):
+    def __add__(self, right) -> 'TransformerBase':
         return CombSumTransformer(self, right)
 
-    def __pow__(self, right):
+    def __pow__(self, right) -> 'TransformerBase':
         return FeatureUnionPipeline(self, right)
 
-    def __mul__(self, rhs):
+    def __mul__(self, rhs : Union[int,float]) -> 'TransformerBase':
         assert isinstance(rhs, int) or isinstance(rhs, float)
         return ScalarProductTransformer(self, rhs)
 
-    def __rmul__(self, lhs):
+    def __rmul__(self, lhs : Union[int,float]) -> 'TransformerBase':
         assert isinstance(lhs, int) or isinstance(lhs, float)
         return ScalarProductTransformer(self, lhs)
 
-    def __or__(self, right):
+    def __or__(self, right) -> 'TransformerBase':
         return SetUnionTransformer(self, right)
 
-    def __and__(self, right):
+    def __and__(self, right) -> 'TransformerBase':
         return SetIntersectionTransformer(self, right)
 
-    def __mod__(self, right):
+    def __mod__(self, right : int) -> 'TransformerBase':
         assert isinstance(right, int)
         return RankCutoffTransformer(self, right)
 
-    def __xor__(self, right):
+    def __xor__(self, right) -> 'TransformerBase':
         return ConcatenateTransformer(self, right)
 
-    def __invert__(self):
+    def __invert__(self) -> 'TransformerBase':
         from .cache import ChestCacheTransformer
         return ChestCacheTransformer(self)
 
-    def transform_gen(self, input, batch_size=1):
+    def transform_gen(self, input : pd.DataFrame, batch_size=1) -> Generator[pd.DataFrame, None, None]:
         docno_provided = "docno" in input.columns
         docid_provided = "docid" in input.columns
         

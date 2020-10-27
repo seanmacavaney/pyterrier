@@ -13,7 +13,7 @@ def coerce_dataframe(obj):
             rtr.append(x)
         return pd.concat(rtr)
 
-def autoopen(filename, mode='rb'):
+def autoopen(filename : str, mode : str = 'rb'):
     """
     A drop-in for open() that applies automatic compression for .gz and .bz2 file extensions
     """
@@ -26,7 +26,7 @@ def autoopen(filename, mode='rb'):
         return bz2.open(filename, mode)
     return open(filename, mode)
 
-def read_results(filename, format="trec", **kwargs):
+def read_results(filename : str, format : str = "trec", **kwargs) -> pd.DataFrame:
     """
     Reads a file into a results dataframe.
 
@@ -94,7 +94,7 @@ def _read_results_trec(filename):
     df["score"] = df["score"].astype(float)
     return df
 
-def write_results(res, filename, format="trec", **kwargs):
+def write_results(res : pd.DataFrame, filename : str, format : str = "trec", **kwargs):
     """
     Write a results dataframe to a file.
 
@@ -138,7 +138,7 @@ def _write_results_letor(res, filename, qrels=None, default_label=0):
             feat_str = ' '.join( [ '%i:%f' % (i+1,values[i]) for i in range(len(values)) ] )
             f.write("%d qid:%s %s # docno=%s\n" % (label, row.qid, feat_str, row.docno))
 
-def read_topics(filename, format="trec", **kwargs):
+def read_topics(filename : str, format : str = "trec", **kwargs) -> pd.DataFrame:
     """
     Reads a file containing topics 
 
@@ -229,7 +229,7 @@ def _read_topics_singleline(filepath, tokenise=True):
         rows.append([slqIter.getQueryId(), q])
     return pd.DataFrame(rows, columns=["qid", "query"])
 
-def read_qrels(file_path):
+def read_qrels(file_path : str) -> pd.DataFrame:
     """
     Reads a file containing qrels (relevance assessments)
 

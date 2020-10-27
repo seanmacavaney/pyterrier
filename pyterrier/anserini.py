@@ -43,7 +43,7 @@ def init_anserini():
 
 
 class AnseriniBatchRetrieve(BatchRetrieveBase):
-    def __init__(self, index_location, k=1000, wmodel="BM25", **kwargs):
+    def __init__(self, index_location : str, k : int = 1000, wmodel : str ="BM25", **kwargs):
         super().__init__(kwargs)
         self.index_location = index_location
         self.k = k
@@ -84,7 +84,7 @@ class AnseriniBatchRetrieve(BatchRetrieveBase):
     def __repr__(self):
         return "AnseriniBatchRetrieve("+self.wmodel + ","+self.k+")"
     
-    def transform(self, queries):
+    def transform(self, queries : pd.DataFrame) -> pd.DataFrame:
         """
         Performs the retrieval
 

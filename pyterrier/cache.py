@@ -33,7 +33,7 @@ def init():
     global CACHE_DIR
     CACHE_DIR = path.join(HOME_DIR,"transformer_cache") 
 
-def list_cache():
+def list_cache() -> dict:
     if CACHE_DIR is None:
         init()
     rtr={}
@@ -93,11 +93,11 @@ class ChestCacheTransformer(TransformerBase):
         self.hits = 0
         self.requests = 0
 
-    def stats(self):
+    def stats(self) -> float:
         return self.hits / self.requests if self.requests > 0 else 0
 
     # dont double cache - we cannot cache ourselves
-    def __invert__(self):
+    def __invert__(self) -> TransformerBase:
         return self
 
     def __repr__(self):
@@ -110,7 +110,7 @@ class ChestCacheTransformer(TransformerBase):
     def NOCACHE(self):
         return self.inner
 
-    def transform(self, input_res):
+    def transform(self, input_res : pd.DataFrame) -> pd.DataFrame:
         if self.disable:
             return self.inner.transform(input_res)
         if "docid" in input_res.columns or "docno" in input_res.columns:

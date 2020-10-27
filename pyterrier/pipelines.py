@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from .utils import Utils
 from .transformer import TransformerBase, EstimatorBase
+from typing import Union, List
 
 def _bold_cols(data, col_type):
     if not data.name in col_type:
@@ -39,7 +40,16 @@ def _color_cols(data, col_type,
     is_max[len(data) - list(reversed(data)).index(max_value) -  1] = colormaxlast_attr
     return is_max
 
-def Experiment(retr_systems, topics, qrels, eval_metrics, names=None, perquery=False, dataframe=True, baseline=None, highlight=None):
+def Experiment(
+            retr_systems : List[Union[pd.DataFrame, TransformerBase]], 
+            topics : Union[str, pd.DataFrame], 
+            qrels : Union[str, pd.DataFrame], 
+            eval_metrics : List[str], 
+            names : List[str] = None, 
+            perquery : bool = False, 
+            dataframe : bool = True, 
+            baseline : int = None, 
+            highlight : str = None):
     """
     Cornac style experiment. Combines retrieval and evaluation.
     Allows easy comparison of multiple retrieval systems with different properties and controls.

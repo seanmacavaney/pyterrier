@@ -1,17 +1,17 @@
 import pandas as pd
-
+from typing import Union, List
 # This file has useful methods for using the Pyterrier Pandas datamodel
 
 # the first rank SHOULD be 0, see the standard "Welcome to TREC email"
 FIRST_RANK = 0
 
-def add_ranks(rtr):
+def add_ranks(rtr : pd.DataFrame) -> pd.DataFrame:
     rtr.drop(columns=["rank"], errors="ignore")
     # -1 assures that first rank will be 0
     rtr["rank"] = rtr.groupby("qid").rank(ascending=False, method="first")["score"].astype(int) -1
     return rtr
 
-def coerce_queries_dataframe(query):
+def coerce_queries_dataframe(query : Union[str,List[str], pd.DataFrame]) -> pd.DataFrame:
     """
     Convert either a string or a list of strings to a dataframe for use as topics in retrieval.
 

@@ -3,11 +3,11 @@ import pytrec_eval
 from collections import defaultdict
 import os
 import deprecation
-
+from typing import Dict, Union, List
 
 @deprecation.deprecated(deprecated_in="0.3.0",
                         details="Please use pt.io.autopen()")
-def autoopen(filename, mode='rb'):
+def autoopen(filename : str, mode : str = 'rb'):
     if filename.endswith(".gz"):
         import gzip
         return gzip.open(filename, mode)
@@ -205,7 +205,7 @@ class Utils:
         return df
 
     @staticmethod
-    def convert_qrels_to_dict(df):
+    def convert_qrels_to_dict(df : pd.DataFrame) -> Dict[str, Dict[str,int]]:
         """
         Convert a qrels dataframe to dictionary for use in pytrec_eval
 
@@ -221,7 +221,7 @@ class Utils:
         return(run_dict_pytrec_eval)
 
     @staticmethod
-    def convert_res_to_dict(df):
+    def convert_res_to_dict(df : pd.DataFrame) -> Dict[str, Dict[str,float]]:
         """
         Convert a result dataframe to dictionary for use in pytrec_eval
 
@@ -237,7 +237,11 @@ class Utils:
         return(run_dict_pytrec_eval)
 
     @staticmethod
-    def evaluate(res, qrels, metrics=['map', 'ndcg'], perquery=False):
+    def evaluate(
+            res : Union[pd.DataFrame, dict], 
+            qrels : Union[pd.DataFrame, dict], 
+            metrics : List[str] = ['map', 'ndcg'], 
+            perquery : bool = False):
         """
         Evaluate the result dataframe with the given qrels
 
@@ -304,7 +308,7 @@ class Utils:
         return (dictionary, missing)
 
     @staticmethod
-    def mean_of_measures(result, measures=None):
+    def mean_of_measures(result : dict, measures=None):
         import numpy as np
         measures_sum = {}
         mean_dict = {}
@@ -331,7 +335,7 @@ class Utils:
         return coerce_queries_dataframe(query)
 
     @staticmethod
-    def get_files_in_dir(dir):
+    def get_files_in_dir(dir : str):
         """
         Returns all the files present in a directory and its subdirectories
 

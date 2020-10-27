@@ -442,7 +442,7 @@ DATASET_MAP = {
     "trec-wt-2012" : RemoteDataset("trec-wt-2012", TREC_WT_2012_FILES),
 }
 
-def get_dataset(name, **kwargs):
+def get_dataset(name, **kwargs) -> Dataset:
     '''
         Get a dataset by name
     '''
@@ -456,7 +456,7 @@ def datasets():
     '''
     return DATASET_MAP.keys()
 
-def list_datasets():
+def list_datasets() -> pd.DataFrame:
     '''
         Returns a dataframe of all datasets, listing which topics, qrels, corpus files or indices are available
     '''
