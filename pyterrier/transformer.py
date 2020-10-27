@@ -1,11 +1,37 @@
 
+import types
 from matchpy import ReplacementRule, Wildcard, Symbol, Operation, Arity, replace_all, Pattern, CustomConstraint
+from warnings import warn
 import pandas as pd
+from .model import add_ranks
 
 LAMBDA = lambda:0
 def is_lambda(v):
     return isinstance(v, type(LAMBDA)) and v.__name__ == LAMBDA.__name__
        
+def is_transformer(v):
+    if isinstance(v, TransformerBase):
+        return True
+    return False
+
+def get_transformer(v):
+    ''' 
+        Used to coerce functions, lambdas etc into transformers 
+    '''
+
+    if isinstance(v, Wildcard):
+        # get out of jail for matchpy
+        return v
+    if is_transformer(v):
+        return v
+    if is_lambda(v):
+        return LambdaPipeline(v)
+    if isinstance(v, types.FunctionType):
+        return LambdaPipeline(v)
+    if isinstance(v, pd.DataFrame):
+        return SourceTransformer(v)
+    raise ValueError("Passed parameter %s of type %s cannot be coerced into a transformer" % (str(v), type(v)))
+
 rewrites_setup = False
 rewrite_rules = []
 
@@ -88,7 +114,7 @@ class TransformerBase:
     def transform(self, topics_or_res : pd.DataFrame) -> pd.DataFrame:
         '''
             Abstract method for all transformations. Typically takes as input a Pandas
-            DataFrame, and also returns one also.
+            DataFrame, and also returns one.
         '''
         pass
 
@@ -106,6 +132,9 @@ class TransformerBase:
 
     def __rshift__(self, right):
         return ComposedPipeline(self, right)
+
+    def __rrshift__(self, left):
+        return ComposedPipeline(left, self)
 
     def __add__(self, right):
         return CombSumTransformer(self, right)
@@ -133,6 +162,33 @@ class TransformerBase:
 
     def __xor__(self, right):
         return ConcatenateTransformer(self, right)
+
+    def __invert__(self):
+        from .cache import ChestCacheTransformer
+        return ChestCacheTransformer(self)
+
+    def transform_gen(self, input, batch_size=1):
+        docno_provided = "docno" in input.columns
+        docid_provided = "docid" in input.columns
+        
+        if docno_provided or docid_provided:
+            queries = input[["qid"]].drop_duplicates()
+        else:
+            queries = input
+        batch=[]      
+        for query in queries.itertuples():
+            if len(batch) == batch_size:
+                batch_topics = pd.concat(batch)
+                batch=[]
+                yield self.transform(batch_topics)
+            batch.append(input[input["qid"] == query.qid])
+        if len(batch) > 0:
+            batch_topics = pd.concat(batch)
+            yield self.transform(batch_topics)
+        
+
+        
+
     
 class EstimatorBase(TransformerBase):
     '''
@@ -149,6 +205,31 @@ class IdentityTransformer(TransformerBase, Operation):
     
     def transform(self, topics : pd.DataFrame) -> pd.DataFrame:
         return topics
+
+class SourceTransformer(TransformerBase, Operation):
+    '''
+    A Transformer that can be used when results have been saved in a dataframe.
+    It will select results on qid.
+    If a query column is in the dataframe passed in the constructor, this will override any query
+    column in the topics dataframe passed to the transform() method.
+    '''
+    arity = Arity.nullary
+
+    def __init__(self, rtr, **kwargs):
+        super().__init__(operands=[], **kwargs)
+        self.operands=[]
+        self.df = rtr[0]
+        self.df_contains_query = "query" in self.df.columns
+        assert "qid" in self.df.columns
+    
+    def transform(self, topics):
+        assert "qid" in topics.columns
+        columns=["qid"]
+        topics_contains_query = "query" in topics.columns
+        if not self.df_contains_query and topics_contains_query:
+            columns.append("query")
+        rtr = topics[columns].merge(self.df, on="qid")
+        return rtr
 
 # this class is useful for testing. it returns a copy of the same
 # dataframe each time transform is called
@@ -179,9 +260,29 @@ class NAryTransformerBase(TransformerBase,Operation):
     def __init__(self, operands, **kwargs):
         super().__init__(operands=operands, **kwargs)
         models = operands
-        self.models = list( map(lambda x : LambdaPipeline(x) if is_lambda(x) else x, models) )
+        self.models = list( map(lambda x : get_transformer(x), models) )
+
+    def __getitem__(self, number):
+        '''
+            Allows access to the ith transformer.
+        '''
+        return self.models[number]
+
+    def __len__(self):
+        '''
+            Returns the number of transformers in the operator.
+        '''
+        return len(self.models)
 
 class SetUnionTransformer(BinaryTransformerBase):
+    '''      
+        This operator makes a retrieval set that includes documents that occur in the union (either) of both retrieval sets. 
+        For instance, let left and right be pandas dataframes, both with the columns = [qid, query, docno, score], 
+        left = [1, "text1", doc1, 0.42] and right = [1, "text1", doc2, 0.24]. 
+        Then, left | right will be a dataframe with only the columns [qid, query, docno] and two rows = [[1, "text1", doc1], [1, "text1", doc2]].
+                
+        In case of duplicated both containing (qid, docno), only the first occurrence will be used.
+    '''
     name = "Union"
 
     def transform(self, topics):
@@ -191,19 +292,31 @@ class SetUnionTransformer(BinaryTransformerBase):
         assert isinstance(res1, pd.DataFrame)
         assert isinstance(res2, pd.DataFrame)
         rtr = pd.concat([res1, res2])
-        rtr = rtr.drop_duplicates(subset=["qid", "docno"])
-        rtr = rtr.sort_values(by=['qid', 'docno'])
-        rtr = rtr.drop(columns=["score"])
+        
+        on_cols = ["qid", "docno"]     
+        rtr = rtr.drop_duplicates(subset=on_cols)
+        rtr = rtr.sort_values(by=on_cols)
+        rtr.drop(columns=["score", "rank"], inplace=True, errors='ignore')
         return rtr
 
 class SetIntersectionTransformer(BinaryTransformerBase):
+    '''
+        This operator makes a retrieval set that only includes documents that occur in the intersection of both retrieval sets. 
+        For instance, let left and right be pandas dataframes, both with the columns = [qid, query, docno, score], 
+        left = [[1, "text1", doc1, 0.42]] (one row) and right = [[1, "text1", doc1, 0.24],[1, "text1", doc2, 0.24]] (two rows).
+        Then, left & right will be a dataframe with only the columns [qid, query, docno] and one single row = [[1, "text1", doc1]].
+                
+        For columns other than (qid, docno), only the left value will be used.
+    '''
     name = "Intersect"
     
     def transform(self, topics):
         res1 = self.left.transform(topics)
-        res2 = self.right.transform(topics)
-        # NB: there may be other duplicate columns
-        rtr = res1.merge(res2, on=["qid", "docno"]).drop(columns=["score_x", "score_y"])
+        res2 = self.right.transform(topics)  
+        
+        on_cols = ["qid", "docno"]
+        rtr = res1.merge(res2, on=on_cols, suffixes=('','_y'))
+        rtr.drop(columns=["score", "rank"], inplace=True, errors='ignore')
         return rtr
 
 class CombSumTransformer(BinaryTransformerBase):
@@ -215,37 +328,44 @@ class CombSumTransformer(BinaryTransformerBase):
         merged = res1.merge(res2, on=["qid", "docno"])
         merged["score"] = merged["score_x"] + merged["score_y"]
         merged = merged.drop(columns=['score_x', 'score_y'])
+        merged = add_ranks(merged)
         return merged
 
 class ConcatenateTransformer(BinaryTransformerBase):
     name = "Concat"
+    epsilon = 0.0001
 
     def transform(self, topics_and_res):
         import pandas as pd
         # take the first set as the top of the ranking
         res1 = self.left.transform(topics_and_res)
         # identify the lowest score for each query
-        last_scores = res1.groupby('qid').min()[['score']].rename(columns={"score" : "_subtractscore"})
+        last_scores = res1[['qid', 'score']].groupby('qid').min().rename(columns={"score" : "_lastscore"})
 
         # the right hand side will provide the rest of the ranking        
         res2 = self.right.transform(topics_and_res)
+
         
         intersection = pd.merge(res1[["qid", "docno"]], res2[["qid", "docno"]].reset_index())
         remainder = res2.drop(intersection["index"])
-        # we will use append documents from remainder to res1
-        # but we need to deduct the last score from each remaining documents
-        remainder = remainder.merge(last_scores, on=["qid"])
-        remainder["score"] = remainder["score"] - remainder["_subtractscore"]
-        remainder = remainder.drop(columns=["_subtractscore"])
+
+        # we will append documents from remainder to res1
+        # but we need to offset the score from each remaining document based on the last score in res1
+        # explanation: remainder["score"] - remainder["_firstscore"] - self.epsilon ensures that the
+        # first document in remainder has a score of -epsilon; we then add the score of the last document
+        # from res1
+        first_scores = remainder[['qid', 'score']].groupby('qid').max().rename(columns={"score" : "_firstscore"})
+
+        remainder = remainder.merge(last_scores, on=["qid"]).merge(first_scores, on=["qid"])
+        remainder["score"] = remainder["score"] - remainder["_firstscore"] + remainder["_lastscore"] - self.epsilon
+        remainder = remainder.drop(columns=["_lastscore",  "_firstscore"])
 
         # now bring together and re-sort
         # this sort should match trec_eval
-        rtr = pd.concat([res1, remainder]).sort_values(["qid", "score", "docno"], ascending=[True, False, True]) 
+        rtr = pd.concat([res1, remainder]).sort_values(by=["qid", "score", "docno"], ascending=[True, False, True]) 
 
         # recompute the ranks
-        rtr = rtr.drop(columns=["rank"])
-        rtr["rank"] = rtr.groupby("qid").rank(ascending=False)["score"].astype(int)
-
+        rtr = add_ranks(rtr)
         return rtr
 
 class ScalarProductTransformer(BinaryTransformerBase):
@@ -277,13 +397,16 @@ class RankCutoffTransformer(BinaryTransformerBase):
         super().__init__(operands, **kwargs)
         self.transformer = operands[0]
         self.cutoff = operands[1]
+        if self.cutoff.value % 10 == 9:
+            warn("Rank cutoff off-by-one bug #66 now fixed, but you used a cutoff ending in 9. Please check your cutoff value. ", DeprecationWarning, 2)
 
     def transform(self, topics_and_res):
         res = self.transformer.transform(topics_and_res)
         if not "rank" in res.columns:
             assert False, "require rank to be present in the result set"
 
-        res = res[res["rank"] <= self.cutoff.value]
+        # this assumes that the minimum rank cutoff is model.FIRST_RANK, i.e. 0
+        res = res[res["rank"] < self.cutoff.value]
         return res
 
 class LambdaPipeline(TransformerBase):
@@ -291,7 +414,7 @@ class LambdaPipeline(TransformerBase):
     This class allows pipelines components to be written as functions or lambdas
 
     :Example:
-    >>> #this pipeline would remove all but the first two documents from a result set
+    >>> # this pipeline would remove all but the first two documents from a result set
     >>> lp = LambdaPipeline(lambda res : res[res["rank"] < 2])
 
     """
@@ -308,22 +431,54 @@ class FeatureUnionPipeline(NAryTransformerBase):
     name = "FUnion"
 
     def transform(self, inputRes):
-        assert "docno" in inputRes.columns or "docid" in inputRes.columns
+        if not "docno" in inputRes.columns and "docid" in inputRes.columns:
+            raise ValueError("FeatureUnion operates as a re-ranker, but input did not have either docno or docid columns, found columns were %s" %  str(inputRes.columns))
+
+        num_results = len(inputRes)
+        import numpy as np
+
+        # a parent could be a feature union, but it still passes the inputRes directly, so inputRes should never have a features column
+        if "features" in inputRes.columns:
+            raise ValueError("FeatureUnion operates as a re-ranker. They can be nested, but input should not contain a features column; found columns were %s" %  str(inputRes.columns))
         
         all_results = []
-        for m in self.models:
-            results = m.transform(inputRes).rename(columns={"score" : "features"})
+
+        for i, m in enumerate(self.models):
+            #IMPORTANT this .copy() is important, in case an operand transformer changes inputRes
+            results = m.transform(inputRes.copy())
+            if len(results) == 0:
+                raise ValueError("Got no results from %s, expected %d" % (repr(m), num_results) )
+            assert not "features_x" in results.columns 
+            assert not "features_y" in results.columns
             all_results.append( results )
 
+    
+        for i, (m, res) in enumerate(zip(self.models, all_results)):
+            #IMPORTANT: dont do this BEFORE calling subsequent feature unions
+            if not "features" in res.columns:
+                if not "score" in res.columns:
+                    raise ValueError("Results from %s did not include either score or features columns, found columns were %s" % (repr(m), str(res.columns)) )
+
+                if len(res) != num_results:
+                    warn("Got number of results different expected from %s, expected %d received %d, feature scores for any missing documents be 0, extraneous documents will be removed" % (repr(m), num_results, len(res)))
+                    all_results[i] = res = inputRes[["qid", "docno"]].merge(res, on=["qid", "docno"], how="left")
+                    res["score"] = res["score"].fillna(value=0)
+
+                res["features"] = res.apply(lambda row : np.array([row["score"]]), axis=1)
+                res.drop(columns=["score"], inplace=True)
+            assert "features" in res.columns
+            #print("%d got %d features from operand %d" % ( id(self) ,   len(results.iloc[0]["features"]), i))
+
         def _concat_features(row):
-            import numpy as np
-            left_features = row["features_x"] if isinstance(row["features_x"], np.ndarray) else [row["features_x"]]
-            right_features = row["features_y"] if isinstance(row["features_y"], np.ndarray) else [row["features_y"]]
+            assert isinstance(row["features_x"], np.ndarray)
+            assert isinstance(row["features_y"], np.ndarray)
+            
+            left_features = row["features_x"]
+            right_features = row["features_y"]
             return np.concatenate((left_features, right_features))
         
         def _reduce_fn(left, right):
             import pandas as pd
-            import numpy as np
             rtr = pd.merge(left, right, on=["qid", "docno"])
             rtr["features"] = rtr.apply(_concat_features, axis=1)
             rtr.drop(columns=["features_x", "features_y"], inplace=True)
@@ -331,7 +486,19 @@ class FeatureUnionPipeline(NAryTransformerBase):
         
         from functools import reduce
         final_DF = reduce(_reduce_fn, all_results)
+
+        # final_DF should have the features column
+        assert "features" in final_DF.columns
+
+        # we used .copy() earlier, inputRes should still have no features column
+        assert not "features" in inputRes.columns
+
+        # final merge - this brings us the score attribute from any previous transformer
         final_DF = inputRes.merge(final_DF, on=["qid", "docno"])
+        # remove the duplicated columns
+        final_DF = final_DF.loc[:,~final_DF.columns.duplicated()]
+        assert not "features_x" in final_DF.columns 
+        assert not "features_y" in final_DF.columns 
         return final_DF
 
 class ComposedPipeline(NAryTransformerBase):

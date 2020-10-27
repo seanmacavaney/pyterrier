@@ -7,10 +7,13 @@ from . import datasets
 import importlib
 
 #sub modules
-rewrite = None
-index = None
-pipelines = None
 anserini = None
+cache = None
+index = None
+io = None
+model = None
+pipelines = None
+rewrite = None
 transformer = None
 
 file_path = os.path.dirname(os.path.abspath(__file__))
@@ -70,31 +73,45 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     if mem is not None:
         jnius_config.add_options('-Xmx' + str(mem) + 'm')
     from jnius import autoclass, cast
+
+    # we only accept Java version 11 and newer; so anything starting 1. or 9. is too old
+    java_version = autoclass("java.lang.System").getProperty("java.version")
+    if java_version.startswith("1.") or java_version.startswith("9."):
+        raise RuntimeError("Pyterrier requires Java 11 or newer, we only found Java version %s;"
+            +" install a more recent Java, or change os.environ['JAVA_HOME'] to point to the proper Java installation",
+            java_version)
+    
     properties = autoclass('java.util.Properties')()
     ApplicationSetup = autoclass('org.terrier.utility.ApplicationSetup')
 
     from .batchretrieve import BatchRetrieve, FeaturesBatchRetrieve
     from .utils import Utils
-    from .index import Indexer, FilesIndexer, TRECCollectionIndexer, DFIndexer, DFIndexUtils, IndexingType
-    from .pipelines import LTR_pipeline, XGBoostLTR_pipeline
+    from .datasets import get_dataset, list_datasets
+    from .index import Indexer, FilesIndexer, TRECCollectionIndexer, DFIndexer, DFIndexUtils, IterDictIndexer, FlatJSONDocumentIterator, IndexingType
+    from .pipelines import LTR_pipeline, XGBoostLTR_pipeline, Experiment
 
     # Make imports global
     globals()["autoclass"] = autoclass
     globals()["cast"] = cast
     globals()["ApplicationSetup"] = ApplicationSetup
 
-    global rewrite
+    
     global anserini
-    global pipelines
+    global cache
     global index
+    global io
+    global model
+    global pipelines
+    global rewrite
     global transformer
-
-    rewrite = importlib.import_module('.rewrite', package='pyterrier') 
     anserini = importlib.import_module('.anserini', package='pyterrier') 
-    pipelines = importlib.import_module('.pipelines', package='pyterrier') 
+    cache = importlib.import_module('.cache', package='pyterrier')
     index = importlib.import_module('.index', package='pyterrier') 
-    transformer = importlib.import_module('.transformer', package='pyterrier') 
-
+    io = importlib.import_module('.io', package='pyterrier')
+    model = importlib.import_module('.model', package='pyterrier')
+    pipelines = importlib.import_module('.pipelines', package='pyterrier') 
+    rewrite = importlib.import_module('.rewrite', package='pyterrier')
+    transformer = importlib.import_module('.transformer', package='pyterrier')
 
     # append the python helpers
     if packages is None:
@@ -112,6 +129,9 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     _logging(logging)
     setup_jnius()
 
+    globals()["get_dataset"] = get_dataset
+    globals()["list_datasets"] = list_datasets
+    globals()["Experiment"] = Experiment
     globals()["BatchRetrieve"] = BatchRetrieve
     globals()["Indexer"] = Indexer
     globals()["FeaturesBatchRetrieve"] = FeaturesBatchRetrieve
@@ -119,6 +139,8 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["FilesIndexer"] = FilesIndexer
     globals()["DFIndexer"] = DFIndexer
     globals()["DFIndexUtils"] = DFIndexUtils
+    globals()["IterDictIndexer"] = IterDictIndexer
+    globals()["FlatJSONDocumentIterator"] = FlatJSONDocumentIterator
     globals()["Utils"] = Utils
     globals()["LTR_pipeline"] = LTR_pipeline
     globals()["XGBoostLTR_pipeline"] = XGBoostLTR_pipeline

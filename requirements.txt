@@ -7,3 +7,6 @@ pyjnius~=1.3.0
 matchpy
 sklearn
 deprecation
+chest
+scipy
+requests

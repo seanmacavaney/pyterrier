@@ -8,7 +8,12 @@ import org.terrier.structures.CollectionStatistics;
 import org.terrier.querying.SearchRequest;
 import org.terrier.structures.MetaIndex;
 import org.terrier.structures.Index;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class RequestContextMatching implements Matching {
+
+    protected static final Logger logger = LoggerFactory.getLogger(RequestContextMatching.class);
 
     public static String CONTROL_META = "request_context_matching";
     public static String CONTEXT_SOURCE = "request_context_matching_source";
@@ -27,13 +32,13 @@ public class RequestContextMatching implements Matching {
         }
 
         public Factory fromDocids(int[] docids) {
-            srq.setControl(CONTROL_META, "docids");
+            srq.setControl(CONTROL_META, "docid");
             srq.setContextObject(CONTEXT_SOURCE, docids);
             return this;
         }
 
         public Factory fromDocnos(String[] docs) {
-            srq.setControl(CONTROL_META, "docnos");
+            srq.setControl(CONTROL_META, "docno");
             srq.setContextObject(CONTEXT_SOURCE, docs);
             return this;
         }
@@ -54,7 +59,8 @@ public class RequestContextMatching implements Matching {
     }
      
     public ResultSet match(String queryNumber, MatchingQueryTerms queryTerms) {
-        
+       	if( queryTerms == null) { throw new RuntimeException("queryTerms is needed");}
+        if( queryTerms.getRequest() == null) { throw new RuntimeException("rq is needed");}
         try{
             String source = queryTerms.getRequest().getControl(CONTROL_META);
             Object o_docs = queryTerms.getRequest().getContextObject(CONTEXT_SOURCE);
@@ -88,7 +94,7 @@ public class RequestContextMatching implements Matching {
             } else {
                 scores = new double[docids.length];
             }
-
+            logger.info("Found " + docids.length + " documents from Request for query " + queryNumber);
             return new QueryResultSet(docids, scores, new short[docids.length]);
         } catch (Exception e) {
             throw new RuntimeException("Problem making resultset", e);

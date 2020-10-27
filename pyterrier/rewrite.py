@@ -4,6 +4,7 @@ from tqdm import tqdm
 import pandas as pd
 from .batchretrieve import parse_index_like
 from .transformer import TransformerBase, Symbol
+from warnings import warn
 
 TerrierQLParser = pt.autoclass("org.terrier.querying.TerrierQLParser")()
 TerrierQLToMatchingQueryTerms = pt.autoclass("org.terrier.querying.TerrierQLToMatchingQueryTerms")()
@@ -11,10 +12,17 @@ ApplyTermPipeline_default = pt.autoclass("org.terrier.querying.ApplyTermPipeline
 QueryResultSet = pt.autoclass("org.terrier.matching.QueryResultSet")
 DependenceModelPreProcess = pt.autoclass("org.terrier.querying.DependenceModelPreProcess")
 
-class SDM(TransformerBase, Symbol):
+class SDM(TransformerBase):
+    '''
+        Implements the sequential dependence model, which Terrier supports using its
+        Indri/Galagoo compatible matchop query language. The rewritten query is derived using
+        the Terrier class DependenceModelPreProcess. 
+
+        This transformer changes the query. It must be followed by a Terrier Retrieve() transformer.
+    '''
 
     def __init__(self, verbose = 0, remove_stopwords = True, prox_model = None, **kwargs):
-        super().__init__(kwargs)
+        super().__init__(**kwargs)
         self.verbose = 0
         self.prox_model = prox_model
         self.remove_stopwords = remove_stopwords
@@ -29,9 +37,9 @@ class SDM(TransformerBase, Symbol):
         # instantiate the DependenceModelPreProcess, specifying a proximity model if specified
         sdm = DependenceModelPreProcess() if self.prox_model is None else DependenceModelPreProcess(self.prox_model)
         
-        for index,row in tqdm(queries.iterrows(), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            qid = row["qid"]
-            query = row["query"]
+        for row in tqdm(queries.itertuples(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            qid = row.qid
+            query = row.query
             # parse the querying into a MQT
             rq = pt.autoclass("org.terrier.querying.Request")()
             rq.setQueryID(qid)
@@ -61,13 +69,18 @@ class SDM(TransformerBase, Symbol):
             new_query = new_query[:-1]
             results.append([qid, new_query])
         return pd.DataFrame(results, columns=["qid", "query"])
+
+class SequentialDependence(SDM):
+    ''' alias for SDM '''
+    pass
     
-
-
-class QueryExpansion(TransformerBase, Symbol):
+class QueryExpansion(TransformerBase):
+    '''
+        A base class for applying different types of query expansion using Terrier's classes
+    '''
 
     def __init__(self, index_like, fb_terms=10, fb_docs=3, qeclass="org.terrier.querying.QueryExpansion", verbose=0, **kwargs):
-        super().__init__(kwargs)
+        super().__init__(**kwargs)
         self.verbose = verbose
         if isinstance(qeclass, str):
             self.qe = pt.autoclass(qeclass)()
@@ -95,13 +108,27 @@ class QueryExpansion(TransformerBase, Symbol):
             scores = []
             occurrences = []
             metaindex = index.getMetaIndex()
+            skipped = 0
             for docno in docnos:
                 docid = metaindex.getDocument("docno", docno)
+                if docid == -1:
+                    skipped +=1 
                 assert docid != -1, "could not match docno" + docno + " to a docid for query " + qid    
                 docids.append(docid)
                 scores.append(0.0)
                 occurrences.append(0)
-        return QueryResultSet(docids,scores, occurrences)
+            if skipped > 0:
+                if skipped == len(docnos):
+                    warn("*ALL* %d feedback docnos for qid %s could not be found in the index" % (skipped, qid))
+                else:
+                    warn("%d feedback docnos for qid %s could not be found in the index" % (skipped, qid))
+        else:
+            raise ValueError("Input resultset has neither docid nor docno")
+        return QueryResultSet(docids, scores, occurrences)
+
+    def _configure_request(self, rq):
+        rq.setControl("qe_fb_docs", str(self.fb_docs))
+        rq.setControl("qe_fb_terms", str(self.fb_terms))
 
     def transform(self, topics_and_res):
 
@@ -109,18 +136,17 @@ class QueryExpansion(TransformerBase, Symbol):
 
         queries = topics_and_res[["qid", "query"]].dropna(axis=0, subset=["query"]).drop_duplicates()
                 
-        for index,row in tqdm(queries.iterrows(), total=queries.shape[0], unit="q") if self.verbose else queries.iterrows():
-            qid = row["qid"]
-            query = row["query"]
+        for row in tqdm(queries.itertuples(), desc=self.name, total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
+            qid = row.qid
+            query = row.query
             srq = self.manager.newSearchRequest(qid, query)
             rq = cast("org.terrier.querying.Request", srq)
             self.qe.configureIndex(rq.getIndex())
+            self._configure_request(rq)
 
             # generate the result set from the input
             rq.setResultSet(self._populate_resultset(topics_and_res, qid, rq.getIndex()))
 
-            rq.setControl("qe_fb_docs", str(self.fb_docs))
-            rq.setControl("qe_fb_terms", str(self.fb_terms))
             
             TerrierQLParser.process(None, rq)
             TerrierQLToMatchingQueryTerms.process(None, rq)
@@ -133,15 +159,38 @@ class QueryExpansion(TransformerBase, Symbol):
             # this control for Terrier stops it re-stemming the expanded terms
             new_query = "applypipeline:off "
             for me in rq.getMatchingQueryTerms():
-                new_query += me.getKey().toString() + "^" + str(me.getValue().getWeight()) + " "
+                new_query += me.getKey().toString() + ( "^%.9f "  % me.getValue().getWeight() ) 
             # remove trailing space
             new_query = new_query[:-1]
             results.append([qid, new_query])
         return pd.DataFrame(results, columns=["qid", "query"])
 
+class DFRQueryExpansion(QueryExpansion):
+
+    def __init__(self, *args, qemodel="Bo1", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.qemodel = qemodel
+
+    def _configure_request(self, rq):
+        super()._configure_request(rq)
+        rq.setControl("qemodel", self.qemodel)
+
+class Bo1QueryExpansion(DFRQueryExpansion):
+    def __init__(self, *args, **kwargs):
+        kwargs["qemodel"] = "Bo1"
+        super().__init__(*args, **kwargs)
+
+class KLQueryExpansion(DFRQueryExpansion):
+    def __init__(self, *args, **kwargs):
+        kwargs["qemodel"] = "KL"
+        super().__init__(*args, **kwargs)
+
 terrier_prf_package_loaded = False
 class RM3(QueryExpansion):
-     def __init__(self, *args, fb_terms=10, fb_docs=3, **kwargs):
+    '''
+        Performs query expansion using RM3 relevance models
+    '''
+    def __init__(self, *args, fb_terms=10, fb_docs=3, **kwargs):
         global terrier_prf_package_loaded
 
         #if not terrier_prf_package_loaded:
@@ -157,7 +206,43 @@ class RM3(QueryExpansion):
         assert prf_found, 'terrier-prf jar not found: you should start Pyterrier with '\
             + 'pt.init(boot_packages=["org.terrier:terrier-prf:0.0.1-SNAPSHOT"])'
         rm = pt.autoclass("org.terrier.querying.RM3")()
-        rm.fbTerms = fb_terms
-        rm.fbDocs = fb_docs
+        self.fb_terms = fb_terms
+        self.fb_docs = fb_docs
         kwargs["qeclass"] = rm
         super().__init__(*args, **kwargs)
+        
+    def transform(self, queries_and_docs):
+        self.qe.fbTerms = self.fb_terms
+        self.qe.fbDocs = self.fb_docs
+        return super().transform(queries_and_docs)
+
+class AxiomaticQE(QueryExpansion):
+    '''
+        Performs query expansion using axiomatic query expansion
+    '''
+    def __init__(self, *args, fb_terms=10, fb_docs=3, **kwargs):
+        global terrier_prf_package_loaded
+
+        #if not terrier_prf_package_loaded:
+        #    pt.extend_classpath("org.terrier:terrier-prf")
+        #    terrier_prf_package_loaded = True
+        #rm = pt.ApplicationSetup.getClass("org.terrier.querying.RM3").newInstance()
+        import jnius_config
+        prf_found = False
+        for j in jnius_config.get_classpath():
+            if "terrier-prf" in j:
+                prf_found = True
+                break
+        assert prf_found, 'terrier-prf jar not found: you should start Pyterrier with '\
+            + 'pt.init(boot_packages=["org.terrier:terrier-prf:0.0.1-SNAPSHOT"])'
+        rm = pt.autoclass("org.terrier.querying.AxiomaticQE")()
+        self.fb_terms = fb_terms
+        self.fb_docs = fb_docs
+        kwargs["qeclass"] = rm
+        super().__init__(*args, **kwargs)
+
+    def transform(self, queries_and_docs):
+        self.qe.fbTerms = self.fb_terms
+        self.qe.fbDocs = self.fb_docs
+        return super().transform(queries_and_docs)
+

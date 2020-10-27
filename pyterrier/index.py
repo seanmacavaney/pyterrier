@@ -9,10 +9,12 @@ import pandas as pd
 # import numpy as np
 import os
 import enum
+import json
 
 StringReader = None
 HashMap = None
 TaggedDocument = None
+FlatJSONDocument = None
 Tokeniser = None
 TRECCollection = None
 SimpleFileCollection = None
@@ -21,6 +23,7 @@ BlockIndexer = None
 Collection = None
 BasicSinglePassIndexer = None
 BlockSinglePassIndexer = None
+BasicMemoryIndexer = None
 Arrays = None
 Array = None
 ApplicationSetup = None
@@ -33,6 +36,7 @@ def run_autoclass():
     global StringReader
     global HashMap
     global TaggedDocument
+    global FlatJSONDocument
     global Tokeniser
     global TRECCollection
     global SimpleFileCollection
@@ -40,6 +44,7 @@ def run_autoclass():
     global BlockIndexer
     global BasicSinglePassIndexer
     global BlockSinglePassIndexer
+    global BasicMemoryIndexer
     global Collection
     global Arrays
     global Array
@@ -52,6 +57,7 @@ def run_autoclass():
     StringReader = autoclass("java.io.StringReader")
     HashMap = autoclass("java.util.HashMap")
     TaggedDocument = autoclass("org.terrier.indexing.TaggedDocument")
+    FlatJSONDocument = autoclass("org.terrier.indexing.FlatJSONDocument")
     Tokeniser = autoclass("org.terrier.indexing.tokenisation.Tokeniser")
     TRECCollection = autoclass("org.terrier.indexing.TRECCollection")
     SimpleFileCollection = autoclass("org.terrier.indexing.SimpleFileCollection")
@@ -59,6 +65,7 @@ def run_autoclass():
     BlockIndexer = autoclass("org.terrier.structures.indexing.classical.BlockIndexer")
     BasicSinglePassIndexer = autoclass("org.terrier.structures.indexing.singlepass.BasicSinglePassIndexer")
     BlockSinglePassIndexer = autoclass("org.terrier.structures.indexing.singlepass.BlockSinglePassIndexer")
+    BasicMemoryIndexer = autoclass("org.terrier.python.MemoryIndexer")
     Collection = autoclass("org.terrier.indexing.Collection")
     Arrays = autoclass("java.util.Arrays")
     Array = autoclass('java.lang.reflect.Array')
@@ -110,7 +117,12 @@ class Indexer:
         """
         if StringReader is None:
             run_autoclass()
-        self.path = os.path.join(index_path, "data.properties")
+        if type is IndexingType.MEMORY:
+            self.path = None
+        else:
+            self.path = os.path.join(index_path, "data.properties")
+            if not os.path.isdir(index_path):
+                os.makedirs(index_path)
         self.index_called = False
         self.index_dir = index_path
         self.blocks = blocks
@@ -118,8 +130,6 @@ class Indexer:
         self.properties = Properties()
         self.setProperties(**self.default_properties)
         self.overwrite = overwrite
-        if not os.path.isdir(index_path):
-            os.makedirs(index_path)
 
     def setProperties(self, **kwargs):
         """
@@ -129,9 +139,7 @@ class Indexer:
             **kwargs: Properties to set to.
 
         Usage:
-            setProperties("property1=value1, property2=value2")
-            or
-            setProperties("**{property1:value1, property2:value2}")
+            >>> setProperties(**{property1:value1, property2:value2})
         """
         for control, value in kwargs.items():
             self.properties.put(control, value)
@@ -140,6 +148,8 @@ class Indexer:
         """
         Check if index exists at the `path` given when object was created
         """
+        if self.path is None:
+            return
         if os.path.isfile(self.path):
             if not self.overwrite:
                 raise ValueError("Index already exists at " + self.path)
@@ -166,9 +176,14 @@ class Indexer:
                 index = BlockIndexer(self.index_dir, "data")
             else:
                 index = BasicIndexer(self.index_dir, "data")
+        elif self.type is IndexingType.MEMORY:
+            if self.blocks:
+                raise Exception("Memory indexing with positions not yet implemented")
+            else:
+                index = BasicMemoryIndexer()
         else:
-            raise Exception("Memory indexing not yet implemented")
-
+            raise Exception("Unknown indexer type")
+        assert index is not None
         return index
 
     def createAsList(self, files_path):
@@ -220,6 +235,10 @@ class Indexer:
 class DFIndexUtils:
 
     @staticmethod
+    def get_column_lengths(df):
+        return dict([(v, df[v].apply(lambda r: len(str(r)) if r!=None else 0).max())for v in df.columns.values])
+
+    @staticmethod
     def create_javaDocIterator(text, *args, **kwargs):
         if HashMap is None:
             run_autoclass()
@@ -248,19 +267,26 @@ class DFIndexUtils:
 
         # this method creates the documents as and when needed.
         def convertDoc(text_row, meta_column):
-            # meta_row = []
+            if text_row is None:
+                text_row = ""
             hashmap = HashMap()
             for column, value in meta_column[1].iteritems():
+                if value is None:
+                    value = ""
                 hashmap.put(column, value)
             return(TaggedDocument(StringReader(text_row), hashmap, Tokeniser.getTokeniser()))
-
-        df = pd.DataFrame(all_metadata)
-        return PythonListIterator(
+        
+        df = pd.DataFrame.from_dict(all_metadata, orient="columns")
+        lengths = DFIndexUtils.get_column_lengths(df)
+        
+        return (
+            PythonListIterator(
                 text.values,
                 df.iterrows(),
                 convertDoc,
-                len(text.values)
-        )
+                len(text.values),
+                ),
+            lengths)
 
 class DFIndexer(Indexer):
     """
@@ -288,13 +314,48 @@ class DFIndexer(Indexer):
                 The name of the keyword argument will be the name of the metadata field and the keyword argument contents will be the metadata content
         """
         self.checkIndexExists()
-        # we need to prevent collectionIterator from being GCd
-        collectionIterator = DFIndexUtils.create_javaDocIterator(text, *args, **kwargs)
+        # we need to prevent collectionIterator from being GCd, so assign to a variable that outlives the indexer
+        collectionIterator, meta_lengths = DFIndexUtils.create_javaDocIterator(text, *args, **kwargs)
+        
+        # generate the metadata properties, set their lengths automatically
+        mprop1=""
+        mprop2=""
+        mprop1_def=None
+        mprop2_def=None
+
+        # keep track of the previous settings of these indexing properties
+        default_props = ApplicationSetup.getProperties()
+        if default_props.containsKey("indexer.meta.forward.keys"):
+            mprop1_def = default_props.get("indexer.meta.forward.keys")
+        if default_props.containsKey("indexer.meta.forward.keylens"):
+            mprop2_def = default_props.get("indexer.meta.forward.keylens")
+
+        # update the indexing properties
+        for k in meta_lengths:
+            mprop1 += k+ ","
+            mprop2 += str(meta_lengths[k]) + ","
+        ApplicationSetup.setProperty("indexer.meta.forward.keys", mprop1[:-1])
+        ApplicationSetup.setProperty("indexer.meta.forward.keylens", mprop2[:-1])
+
+        # make a Collection class for Terrier
         javaDocCollection = autoclass("org.terrier.python.CollectionFromDocumentIterator")(collectionIterator)
         index = self.createIndexer()
         index.index([javaDocCollection])
         self.index_called = True
         collectionIterator = None
+
+        # this block is for restoring the indexing config
+        if mprop1_def is not None:
+            ApplicationSetup.setProperty("indexer.meta.forward.keys", mprop1_def)
+        else:
+            default_props.remove("indexer.meta.forward.keys")
+        if mprop2_def is not None:
+            ApplicationSetup.setProperty("indexer.meta.forward.keylens", mprop2_def)
+        else:
+            default_props.remove("indexer.meta.forward.keylens")
+
+        if self.type is IndexingType.MEMORY:
+            return index.getIndex().getIndexRef()
         return IndexRef.of(self.index_dir + "/data.properties")
 
 class PythonListIterator(PythonJavaClass):
@@ -333,6 +394,83 @@ class PythonListIterator(PythonJavaClass):
         if self.convertFn is not None:
             return self.convertFn(text, meta)
         return [text, meta]
+
+class FlatJSONDocumentIterator(PythonJavaClass):
+    __javainterfaces__ = ['java/util/Iterator']
+
+    def __init__(self, it):
+        super(FlatJSONDocumentIterator, self).__init__()
+        if FlatJSONDocument is None:
+            run_autoclass()
+        self._it = it
+        # easiest way to support hasNext is just to start consuming right away, I think
+        self._next = next(self._it, StopIteration)
+
+    @java_method('()V')
+    def remove():
+        # 1
+        pass
+
+    @java_method('(Ljava/util/function/Consumer;)V')
+    def forEachRemaining(action):
+        # 1
+        pass
+
+    @java_method('()Z')
+    def hasNext(self):
+        return self._next is not StopIteration
+
+    @java_method('()Ljava/lang/Object;')
+    def next(self):
+        result = self._next
+        self._next = next(self._it, StopIteration)
+        if result is not StopIteration:
+            return FlatJSONDocument(json.dumps(result))
+        return None
+
+class IterDictIndexer(Indexer):
+    """
+    Use this Indexer if you wish to index an iter of dicts (possibly with multiple fields)
+
+    Attributes:
+        default_properties(dict): Contains the default properties
+        path(str): The index directory + /data.properties
+        index_called(bool): True if index() method of child Indexer has been called, false otherwise
+        index_dir(str): The index directory
+        blocks(bool): If true the index has blocks enabled
+        properties: A Terrier Properties object, which is a hashtable with properties and their values
+        overwrite(bool): If True the index() method of child Indexer will overwrite any existing index
+    """
+    def index(self, it, fields=('text',), meta=('docno',), meta_lengths=None):
+        """
+        Index the specified iter of dicts with the (optional) specified fields
+
+        Args:
+            it(iter[dict]): an iter of document dict to be indexed
+            fields(list[str]): keys to be indexed as fields
+            meta(list[str]): keys to be considered as metdata
+            meta_lengths(list[int]): length of metadata, defaults to 512 characters
+        """
+        self.checkIndexExists()
+        # What are the ramifications of setting all lengths to a large value like this? (storage cost?)
+        if meta_lengths is None:
+            meta_lengths = ['512'] * len(meta)
+        self.setProperties(**{
+            'FieldTags.process': ','.join(fields),
+            'FieldTags.casesensitive': 'true',
+            'indexer.meta.forward.keys': ','.join(meta),
+            'indexer.meta.forward.keylens': ','.join([str(l) for l in meta_lengths])
+        })
+        # we need to prevent collectionIterator from being GCd
+        collectionIterator = FlatJSONDocumentIterator(iter(it)) # force it to be iter
+        javaDocCollection = autoclass("org.terrier.python.CollectionFromDocumentIterator")(collectionIterator)
+        index = self.createIndexer()
+        index.index([javaDocCollection])
+        self.index_called = True
+        collectionIterator = None
+        if self.type is IndexingType.MEMORY:
+            return index.getIndex().getIndexRef()
+        return IndexRef.of(self.index_dir + "/data.properties")
 
 class TRECCollectionIndexer(Indexer):
     type_to_class = {
@@ -397,6 +535,8 @@ class TRECCollectionIndexer(Indexer):
         index.index(collsArray)
         colObj.close()
         self.index_called = True
+        if self.type is IndexingType.MEMORY:
+            return index.getIndex().getIndexRef()
         return IndexRef.of(self.index_dir + "/data.properties")
 
 class FilesIndexer(Indexer):
@@ -431,6 +571,8 @@ class FilesIndexer(Indexer):
         simpleColl = SimpleFileCollection(asList, False)
         index.index([simpleColl])
         self.index_called = True
+        if self.type is IndexingType.MEMORY:
+            return index.getIndex().getIndexRef()
         return IndexRef.of(self.index_dir + "/data.properties")
 
 class TQDMCollection(PythonJavaClass):
@@ -450,7 +592,7 @@ class TQDMCollection(PythonJavaClass):
         rtr = self.collection.nextDocument()
         filenum = self.collection.FileNumber
         if filenum > self.last:
-            self.pbar.update(filenum)
+            self.pbar.update(filenum - self.last)
             self.last = filenum
         return rtr
 

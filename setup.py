@@ -1,3 +1,7 @@
+import sys
+
+assert sys.version_info[0] > 2, "Pyterrier requires Python 3.6"
+
 import os
 try:
     from setuptools import setup, find_packages
@@ -37,7 +41,7 @@ with open('requirements.txt', 'rt') as f:
             pkg_name = req.split('/')[-1].replace('.git', '')
             if "#egg=" in pkg_name:
                 pkg_name = pkg_name.split("#egg=")[1]
-            requirements.append(f'{pkg_name} @ {req}')
+            requirements.append("%s @ %s" % (pkg_name, req))
         else:
             requirements.append(req)
 
@@ -45,7 +49,7 @@ setup(
     name="python-terrier",
     version=get_version("pyterrier/__init__.py"),
     author="Craig Macdonald",
-    author_email='craigm{at}.dcs.gla.ac.uk',
+    author_email='craigm@dcs.gla.ac.uk',
     description="Terrier IR platform Python API",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -53,7 +57,7 @@ setup(
     packages=['pyterrier'] + ['pyterrier.' + i for i in find_packages('pyterrier')],
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: MPL License",
         "Operating System :: OS Independent",
     ],
     install_requires=requirements,
