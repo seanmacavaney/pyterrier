@@ -1,14 +1,14 @@
 import pyterrier as pt
 from jnius import cast
-from tqdm import tqdm
 import pandas as pd
-from .batchretrieve import parse_index_like
+from .batchretrieve import _parse_index_like
 from .transformer import TransformerBase, Symbol
+from . import tqdm
 from warnings import warn
+from typing import Dict 
 
 TerrierQLParser = pt.autoclass("org.terrier.querying.TerrierQLParser")()
 TerrierQLToMatchingQueryTerms = pt.autoclass("org.terrier.querying.TerrierQLToMatchingQueryTerms")()
-ApplyTermPipeline_default = pt.autoclass("org.terrier.querying.ApplyTermPipeline")()
 QueryResultSet = pt.autoclass("org.terrier.matching.QueryResultSet")
 DependenceModelPreProcess = pt.autoclass("org.terrier.querying.DependenceModelPreProcess")
 
@@ -79,14 +79,24 @@ class QueryExpansion(TransformerBase):
         A base class for applying different types of query expansion using Terrier's classes
     '''
 
-    def __init__(self, index_like, fb_terms : int =10, fb_docs : int =3, qeclass : str = "org.terrier.querying.QueryExpansion", verbose : int =0, **kwargs):
+    def __init__(self, 
+            index_like, 
+            fb_terms : int = 10, 
+            fb_docs : int = 3, 
+            qeclass : str = "org.terrier.querying.QueryExpansion", 
+            verbose : int = 0, 
+            properties : Dict[str,str] = {}, 
+            **kwargs):
         super().__init__(**kwargs)
         self.verbose = verbose
         if isinstance(qeclass, str):
             self.qe = pt.autoclass(qeclass)()
         else:
             self.qe = qeclass
-        self.indexref = parse_index_like(index_like)
+        self.indexref = _parse_index_like(index_like)
+        for k,v in properties.items():
+            pt.ApplicationSetup.setProperty(k, str(v))
+        self.applytp = pt.autoclass("org.terrier.querying.ApplyTermPipeline")()
         self.fb_terms = fb_terms
         self.fb_docs = fb_docs
         self.manager = pt.autoclass("org.terrier.querying.ManagerFactory")._from_(self.indexref)
@@ -151,7 +161,7 @@ class QueryExpansion(TransformerBase):
             TerrierQLParser.process(None, rq)
             TerrierQLToMatchingQueryTerms.process(None, rq)
             # how to make sure this happens/doesnt happen when appropriate.
-            ApplyTermPipeline_default.process(None, rq)
+            self.applytp.process(None, rq)
             # to ensure weights are identical to Terrier
             rq.getMatchingQueryTerms().normaliseTermWeights();
             self.qe.expandQuery(rq.getMatchingQueryTerms(), rq)

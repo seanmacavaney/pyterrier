@@ -6,7 +6,10 @@ from typing import Union, List
 FIRST_RANK = 0
 
 def add_ranks(rtr : pd.DataFrame) -> pd.DataFrame:
-    rtr.drop(columns=["rank"], errors="ignore")
+    rtr.drop(columns=["rank"], errors="ignore", inplace=True)
+    if len(rtr) == 0:
+        rtr["rank"] = pd.Series(index=rtr.index, dtype='int64')
+        return rtr
     # -1 assures that first rank will be 0
     rtr["rank"] = rtr.groupby("qid").rank(ascending=False, method="first")["score"].astype(int) -1
     return rtr

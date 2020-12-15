@@ -31,8 +31,9 @@ class TestDunder(BaseTestCase):
 
         # check that the two series contain what we expect
         self.assertEqual(series_col[0], m[0]["docno"])
-
-        self.assertEqual(len(series_col[0]), m.as_df())
+        self.assertEqual(series_col[0], m.as_df().iloc[0]["docno"])
+        self.assertEqual(len(series_col), len(m.as_df()))
+        
 
 
     def test_index_dunders(self):

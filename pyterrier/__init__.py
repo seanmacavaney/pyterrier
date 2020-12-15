@@ -2,8 +2,8 @@ __version__ = "0.3.0.dev"
 
 import os
 from .bootstrap import _logging, setup_terrier, setup_jnius
-from . import datasets
 from typing import List, Union
+
 import importlib
 
 #sub modules
@@ -22,7 +22,7 @@ ApplicationSetup = None
 IndexFactory = None
 IndexRef = None
 properties = None
-
+tqdm = None
 HOME_DIR = None
 
 def init(
@@ -33,25 +33,44 @@ def init(
         packages : List[str] = [], 
         redirect_io : bool = True, 
         logging : str = 'WARN', 
-        home_dir : str = None
+        home_dir : str = None,
+        tqdm : str =None
         ):
     """
     Function necessary to be called before Terrier classes and methods can be used.
-    Loads the Terrier.jar file and imports classes. Also finds the correct version of Terrier to download if no version is specified.
+    Loads the Terrier .jar file and imports classes. Also finds the correct version of Terrier to download if no version is specified.
 
     Args:
-        version(str): Which version of Terrier to download. Default=None.
-            If None, find the newest Terrier version in maven and download it.
-        mem(int): Maximum memory allocated for java heap in MB. Default is 1/4 of physical memory.
-        jvm_opts(list(str)): Extra options to pass to the JVM. Default=[].
-        boot_packages(list(str)): Extra maven package coordinates files to in the JVM boot classpath. Default=[]. 
-        packages(list(str)): Extra maven package coordinates files to load. Default=[]. More information at https://github.com/terrier-org/terrier-core/blob/5.x/doc/terrier_develop.md
-        redirect_io(bool): If True, the Java System.out and System.err will be redirected to Pythons sys.out and sys.err. Default=True.
-        logging(str): the logging level to use.
-                      Can be one of 'INFO', 'DEBUG', 'TRACE', 'WARN', 'ERROR'. The latter is the quietest.
-                      Default='WARN'.
+        version(str): Which version of Terrier to download. Default is `None`.
+
+         * If None, find the newest Terrier released version in MavenCentral and download it.
+         * If `"snapshot"`, will download the latest build from `Jitpack <https://jitpack.io/>`_.
+
+        mem(str): Maximum memory allocated for the Java virtual machine heap in MB. Corresponds to java `-Xmx` commandline argument. Default is 1/4 of physical memory.
+        boot_packages(list(str)): Extra maven package coordinates files to load before starting Java. Default=`[]`. There is more information about loading packages in the `Terrier documentation <https://github.com/terrier-org/terrier-core/blob/5.x/doc/terrier_develop.md>`_
+        packages(list(str)): Extra maven package coordinates files to load, using the Terrier classloader. Default=`[]`. See also `boot_packages` above.
+        jvm_opts(list(str)): Extra options to pass to the JVM. Default=`[]`. For instance, you may enable Java assertions by setting `jvm_opts=['-ea']`
+        redirect_io(boolean): If True, the Java `System.out` and `System.err` will be redirected to Pythons sys.out and sys.err. Default=True.
+        logging(str): the logging level to use:
+
+         * Can be one of `'INFO'`, `'DEBUG'`, `'TRACE'`, `'WARN'`, `'ERROR'`. The latter is the quietest.
+         * Default is `'WARN'`.
+
         home_dir(str): the home directory to use. Default to PYTERRIER_HOME environment variable.
+        tqdm: The `tqdm <https://tqdm.github.io/>`_ instance to use for progress bars within PyTerrier. Defaults to tqdm.tqdm. Available options are `'tqdm'`, `'auto'` or `'notebook'`.
+
+   
+    **Locating the Terrier .jar file:** PyTerrier is not tied to a specific version fo Terrier and will automatically locate and download a recent Terrier .jar file. However, inevitably, some functionalities will require more recent Terrier versions. 
+    
+     * If set, PyTerrier uses the `version` init kwarg to determine the .jar file to look for.
+     * If the `version` init kwarg is not set, Terrier will query MavenCentral to determine the latest Terrier release.
+     * If `version` is set to `"snapshot"`, the latest .jar file build derived from the `Terrier Github repository <https://github.com/terrier-org/terrier-core/>`_ will be downloaded from `Jitpack <https://jitpack.io/>`_.
+     * Otherwise the local (`~/.mvn`) and MavenCentral repositories are searched for the jar file at the given version.
+    In this way, the default setting is to download the latest release of Terrier from MavenCentral. The user is also able to use a locally installed copy in their private Maven repository, or track the latest build of Terrier from Jitpack.
+    
     """
+    set_tqdm(tqdm)
+
     global ApplicationSetup
     global properties
     global firstInit
@@ -61,7 +80,7 @@ def init(
     # we keep a local directory
     if home_dir is not None:
         HOME_DIR = home_dir
-    if "PYTERRIER_HOME" in os.environ:
+    elif "PYTERRIER_HOME" in os.environ:
         HOME_DIR = os.environ["PYTERRIER_HOME"]
     else:
         from os.path import expanduser
@@ -72,7 +91,7 @@ def init(
 
     # get the initial classpath for the JVM
     classpathTrJars = setup_terrier(HOME_DIR, version, boot_packages=boot_packages)
-
+    
     # Import pyjnius and other classes
     import jnius_config
     for jar in classpathTrJars:
@@ -162,40 +181,95 @@ def init(
 
     firstInit = True
 
+def set_tqdm(type : str):
+    """
+        Set the tqdm type that Pyterrier will use internally.
+    """
+    global tqdm
+    
+    if type is None or type == 'tqdm':
+        from tqdm import tqdm as bartype
+        tqdm = bartype
+    elif type == 'notebook':
+        from tqdm.notebook import tqdm as bartype
+        tqdm = bartype
+    elif type == 'auto':
+        from tqdm.auto import tqdm as bartype
+        tqdm = bartype
+    else:
+        raise ValueError("Unknown tqdm type %s" % str(type))
+    
+
 def started() -> bool:
+    """
+        Returns `True` if `init()` has already been called, false otherwise. Typical usage::
+
+            import pyterrier as pt
+            if not pt.started():
+                pt.init()
+    """
     return(firstInit)
 
+def version() -> str:
+    """
+        Returns the version string from the underlying Terrier platform.
+    """
+    from jnius import autoclass
+    return autoclass("org.terrier.Version").VERSION
+
 def check_version(min : Union[str,float,int]) -> bool:
+    """
+        Returns True iff the underlying Terrier version is no older than the requested version.
+    """
     from jnius import autoclass
     from packaging.version import Version
     min = Version(str(min))
-    currentVer = Version(autoclass("org.terrier.Version").VERSION.replace("-SNAPSHOT", ""))
+    currentVer = Version(version().replace("-SNAPSHOT", ""))
     return currentVer >= min
 
 def redirect_stdouterr():
+    """
+        Ensure that stdout and stderr have been redirected. Equivalent to setting the redirect_io parameter to init() as `True`.
+    """
     from . import bootstrap
     bootstrap.redirect_stdouterr()
 
 def logging(level : str):
+    """
+        Set the logging level. Equivalent to setting the logging= parameter to init().
+    """
     from . import bootstrap
     bootstrap.logging(level)
 
 def set_property(k, v):
-    # properties = Properties()
+    """
+        Allows to set a property in Terrier's global properties configuration. Example::
+
+            pt.set_property("termpipelines", "")
+    """
     properties[k] = v
     ApplicationSetup.bootstrapInitialisation(properties)
 
 def set_properties(kwargs):
-    # properties = Properties()
+    """
+        Allows to set many properties in Terrier's global properties configuration
+    """
     for control, value in kwargs.items():
         properties.put(control, value)
     ApplicationSetup.bootstrapInitialisation(properties)
 
+
 def run(cmd, args : List[str] = []):
+    """
+        Allows to run a Terrier executable class, i.e. one that can be access from the `bin/terrier` commandline programme.
+    """
     from jnius import autoclass
     autoclass("org.terrier.applications.CLITool").main([cmd] + args)
 
 def extend_classpath(mvnpackages : List[str]):
+    """
+        Allows to add packages to Terrier's classpath after the JVM has started.
+    """
     assert check_version(5.3), "Terrier 5.3 required for this functionality"
     if isinstance(mvnpackages, str):
         mvnpackages = [mvnpackages]

@@ -5,7 +5,9 @@ import pandas as pd
 from .transformer import is_lambda
 import types
 import requests
-from tqdm import tqdm
+from . import tqdm
+import tarfile
+from typing import Sequence
 
 STANDARD_TERRIER_INDEX_FILES = [
     "data.direct.bf",
@@ -20,24 +22,39 @@ STANDARD_TERRIER_INDEX_FILES = [
 ]
 
 class Dataset():
+    """
+        Represents a dataset (test collection) for indexing or retrieval. A common use-case is to use the Dataset within an Experiment::
+
+            dataset = pt.get_dataset("trec-robust-2004")
+            pt.Experiment([br1, br2], dataset.get_topics(), dataset.get_qrels(), eval_metrics=["map", "recip_rank"])
+
+    """
 
     def _configure(self, **kwargs):
         pass
 
-    def get_corpus_location(self):
-        ''' Returns the location of the files to allow indexing the corpus '''
+    def get_corpus(self) -> Sequence[str]:
+        """ 
+            Returns the location of the files to allow indexing the corpus. 
+        """
         pass
 
-    def get_index(self):
-        ''' Returns the IndexRef of the index to allow retrieval '''
+    def get_index(self, variant=None):
+        """ 
+            Returns the IndexRef of the index to allow retrieval. Only a few datasets provide indices ready made.
+        """
         pass
 
-    def get_topics(self):
-        ''' Returns the topics, as a dataframe, ready for retrieval '''
+    def get_topics(self, variant=None) -> pd.DataFrame:
+        """
+            Returns the topics, as a dataframe, ready for retrieval. 
+        """
         pass
 
-    def get_qrels(self):
-        ''' Returns the qrels, as a dataframe, ready for evaluation '''
+    def get_qrels(self, variant=None) -> pd.DataFrame:
+        """ 
+            Returns the qrels, as a dataframe, ready for evaluation.
+        """
         pass
 
 class RemoteDataset(Dataset):
@@ -88,7 +105,7 @@ class RemoteDataset(Dataset):
             if not variant in self.locations[component]:
                 raise ValueError("For %s in dataset %s, there is no variant %s. Available are: %s" % (component, name, variant, str(self.locations[component].keys())))
 
-    def _get_one_file(self, component, variant=None):
+    def _get_one_file(self, component, variant=None) -> str:
         filetype=None        
         self._check_variant(component, variant)
         location = self.locations[component][0] if variant is None else self.locations[component][variant]
@@ -106,6 +123,16 @@ class RemoteDataset(Dataset):
         URL = location[1]
         if len(location) > 2:
             filetype = location[2]
+        if "#" in URL:
+            tarname, intarfile = URL.split("#")
+            assert not "/" in intarfile
+            assert ".tar" in tarname or ".tgz" in tarname
+            localtarfile, _ = self._get_one_file("tars", tarname)
+            tarobj = tarfile.open(localtarfile, "r")
+            tarobj.extract(intarfile, path=self.corpus_home)
+            local = os.path.join(self.corpus_home, local)
+            os.rename(os.path.join(self.corpus_home, intarfile), local)
+            return (local, filetype)
 
         if not os.path.exists(self.corpus_home):
             os.makedirs(self.corpus_home)
@@ -121,7 +148,7 @@ class RemoteDataset(Dataset):
                 raise ValueError("Could not fetch " + URL) from he
         return (local, filetype)
 
-    def _get_all_files(self, component, **kwargs):
+    def _get_all_files(self, component, **kwargs) -> str:
         localDir = os.path.join(self.corpus_home, component)
         if not os.path.exists(localDir):
             os.makedirs(localDir)
@@ -132,31 +159,42 @@ class RemoteDataset(Dataset):
         for (local, URL) in self.locations[component]:
             local = os.path.join(localDir, local)
             if not os.path.exists(local):
-                try:
-                    RemoteDataset.download(URL, local, **kwargs)
-                except urllib.error.HTTPError as he:
-                    raise ValueError("Could not fetch " + URL) from he
+                if "#" in URL:
+                    tarname, intarfile = URL.split("#")
+                    assert not "/" in intarfile
+                    assert ".tar" in tarname or ".tgz" in tarname
+                    localtarfile, _ = self._get_one_file("tars", tarname)
+                    tarobj = tarfile.open(localtarfile, "r")
+                    tarobj.extract(intarfile, path=self.corpus_home)
+                    local = os.path.join(self.corpus_home, local)
+                    #TODO, files could be recompressed here to save space
+                    os.rename(os.path.join(self.corpus_home, intarfile), local)
+                else:
+                    try:
+                        RemoteDataset.download(URL, local, **kwargs)
+                    except urllib.error.HTTPError as he:
+                        raise ValueError("Could not fetch " + URL) from he
         return localDir
 
-    def _describe_component(self, component):
+    def _describe_component(self, component) -> Sequence[str]:
         if component not in self.locations:
             return None
         if type(self.locations[component]) == type([]):
             return True
         return self.locations[component].keys()
 
-    def get_corpus(self, **kwargs):
+    def get_corpus(self, **kwargs) -> Sequence[str]:
         import pyterrier as pt
         return pt.Utils.get_files_in_dir(self._get_all_files("corpus", **kwargs))
 
-    def get_qrels(self, variant=None):
+    def get_qrels(self, variant=None) -> pd.DataFrame:
         import pyterrier as pt
         filename, type = self._get_one_file("qrels", variant)
         if type == "direct":
             return filename 
         return pt.io.read_qrels(filename)
 
-    def get_topics(self, variant=None, **kwargs):
+    def get_topics(self, variant=None, **kwargs) -> pd.DataFrame:
         import pyterrier as pt
         file, filetype = self._get_one_file("topics", variant)
         if filetype is None or filetype in pt.io.SUPPORTED_TOPICS_FORMATS:
@@ -201,7 +239,7 @@ TREC_COVID_FILES = {
     },
 }
 
-TREC_DEEPLEARNING_MSMARCO_FILES = {
+TREC_DEEPLEARNING_DOCS_MSMARCO_FILES = {
     "corpus" : 
         [("msmarco-docs.trec.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/msmarco-docs.trec.gz")],
     "corpus-tsv":
@@ -219,6 +257,28 @@ TREC_DEEPLEARNING_MSMARCO_FILES = {
             "train" : ("msmarco-doctrain-qrels.tsv.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/msmarco-doctrain-qrels.tsv.gz"),
             "dev" : ("msmarco-docdev-qrels.tsv.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/msmarco-docdev-qrels.tsv.gz"),
             "test" : ("2019qrels-docs.txt", "https://trec.nist.gov/data/deep/2019qrels-docs.txt")
+        }
+}
+
+TREC_DEEPLEARNING_PASSAGE_MSMARCO_FILES = {
+    "corpus" : 
+        [("collection.tsv", "collection.tar.gz#collection.tsv")],
+    "topics" :
+        { 
+            "train" : ("queries.train.tsv", "queries.tar.gz#queries.train.tsv", "singleline"),
+            "dev" : ("queries.dev.tsv", "queries.tar.gz#queries.dev.tsv", "singleline"),
+            "eval" : ("queries.eval.tsv", "queries.tar.gz#queries.eval.tsv", "singleline"),
+            "test-2019" : ("msmarco-test2019-queries.tsv.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/msmarco-test2019-queries.tsv.gz", "singleline"),
+        },        
+    "tars" : {
+        "queries.tar.gz" : ("queries.tar.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/queries.tar.gz"),
+        "collection.tar.gz" : ("collection.tar.gz", "https://msmarco.blob.core.windows.net/msmarcoranking/collection.tar.gz")
+    },
+    "qrels" : 
+        { 
+            "train" : ("qrels.train.tsv", "https://msmarco.blob.core.windows.net/msmarcoranking/qrels.train.tsv"),
+            "dev" : ("qrels.dev.tsv", "https://msmarco.blob.core.windows.net/msmarcoranking/qrels.dev.tsv"),
+            "test-2019" : ("2019qrels-docs.txt", "https://trec.nist.gov/data/deep/2019qrels-pass.txt")
         }
 }
 
@@ -423,7 +483,8 @@ VASWANI_FILES = {
 DATASET_MAP = {
     "50pct" : RemoteDataset("50pct", FIFTY_PCT_FILES),
     "vaswani": RemoteDataset("vaswani", VASWANI_FILES),
-    "trec-deep-learning-docs" : RemoteDataset("trec-deep-learning-docs", TREC_DEEPLEARNING_MSMARCO_FILES),
+    "trec-deep-learning-docs" : RemoteDataset("trec-deep-learning-docs", TREC_DEEPLEARNING_DOCS_MSMARCO_FILES),
+    "trec-deep-learning-passages" : RemoteDataset("trec-deep-learning-passages", TREC_DEEPLEARNING_PASSAGE_MSMARCO_FILES),
     "trec-robust-2004" : RemoteDataset("trec-robust-2004", TREC_ROBUST_04_FILES),
     "trec-robust-2005" : RemoteDataset("trec-robust-2005", TREC_ROBUST_05_FILES),
     #medical-like tracks
@@ -443,23 +504,23 @@ DATASET_MAP = {
 }
 
 def get_dataset(name, **kwargs) -> Dataset:
-    '''
+    """
         Get a dataset by name
-    '''
+    """
     rtr = DATASET_MAP[name]
     rtr._configure(**kwargs)
     return rtr
 
-def datasets():
-    '''
+def datasets()-> Sequence[str]:
+    """
         Lists all the names of the datasets
-    '''
+    """
     return DATASET_MAP.keys()
 
 def list_datasets() -> pd.DataFrame:
-    '''
+    """
         Returns a dataframe of all datasets, listing which topics, qrels, corpus files or indices are available
-    '''
+    """
     import pandas as pd
     rows=[]
     for k in datasets():

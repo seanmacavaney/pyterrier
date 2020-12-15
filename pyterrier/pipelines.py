@@ -5,6 +5,7 @@ import numpy as np
 from .utils import Utils
 from .transformer import TransformerBase, EstimatorBase
 from typing import Union, List
+from .model import add_ranks
 
 def _bold_cols(data, col_type):
     if not data.name in col_type:
@@ -98,15 +99,26 @@ def Experiment(
     if isinstance(qrels, str):
         if os.path.isfile(qrels):
             qrels = Utils.parse_qrels(qrels)
+    from timeit import default_timer as timer
 
     results = []
+    times=[]
     neednames = names is None
     if neednames:
         names = []
     elif len(names) != len(retr_systems):
         raise ValueError("names should be the same length as retr_systems")
     for system in retr_systems:
-        results.append(system.transform(topics))
+        # if its a DataFrame, use it as the results
+        if isinstance(system, pd.DataFrame):
+            results.append(system)
+            times.append(0)
+        else:
+            starttime = timer()            
+            results.append(system.transform(topics))
+            endtime = timer()
+            times.append( (endtime - starttime) * 1000.)
+            
         if neednames:
             names.append(str(system))
 
@@ -117,7 +129,11 @@ def Experiment(
     evalDict={}
     evalDictsPerQ=[]
     actual_metric_names=[]
-    for name,res in zip(names,results):
+    mrt_needed = False
+    if "mrt" in eval_metrics:
+        mrt_needed = True
+        eval_metrics.remove("mrt")
+    for name,res,time in zip(names, results, times):
         evalMeasuresDict = Utils.evaluate(res, qrels_dict, metrics=eval_metrics, perquery=perquery or baseline is not None)
         
         if perquery or baseline is not None:
@@ -130,6 +146,9 @@ def Experiment(
         if baseline is not None:
             evalDictsPerQ.append(evalMeasuresDict)
             evalMeasuresDict = Utils.mean_of_measures(evalMeasuresDict)
+
+        if mrt_needed:
+            evalMeasuresDict["mrt"] = time / float(len(all_qids))
 
         if perquery:
             for qid in all_qids:
@@ -146,20 +165,26 @@ def Experiment(
             return pd.DataFrame(evalsRows, columns=["name", "qid", "measure", "value"])
 
         highlight_cols = { m : "+"  for m in actual_metric_names }
+        if mrt_needed:
+            highlight_cols["mrt"] = "-"
 
         if baseline is not None:
             assert len(evalDictsPerQ) == len(retr_systems)
             from scipy import stats
             baselinePerQuery={}
-            for m in actual_metric_names:
+            per_q_metrics = actual_metric_names.copy()
+            if mrt_needed:
+                per_q_metrics.remove("mrt")
+
+            for m in per_q_metrics:
                 baselinePerQuery[m] = np.array([ evalDictsPerQ[baseline][q][m] for q in evalDictsPerQ[baseline] ])
 
             for i in range(0, len(retr_systems)):
                 additionals=[]
                 if i == baseline:
-                    additionals = [None] * (3*len(actual_metric_names))
+                    additionals = [None] * (3*len(per_q_metrics))
                 else:
-                    for m in actual_metric_names:
+                    for m in per_q_metrics:
                         # we iterate through queries based on the baseline, in case run has different order
                         perQuery = np.array( [ evalDictsPerQ[i][q][m] for q in evalDictsPerQ[baseline] ])
                         delta_plus = (perQuery > baselinePerQuery[m]).sum()
@@ -168,7 +193,7 @@ def Experiment(
                         additionals.extend([delta_plus, delta_minus, p])
                 evalsRows[i].extend(additionals)
             delta_names=[]
-            for m in actual_metric_names:
+            for m in per_q_metrics:
                 delta_names.append("%s +" % m)
                 highlight_cols["%s +" % m] = "+"
                 delta_names.append("%s -" % m)
@@ -227,7 +252,7 @@ class LTR_pipeline(EstimatorBase):
             topicsTest(DataFrame): A dataframe with the test topics.
         """
         test_DF["score"] = self.LTR.predict(np.stack(test_DF["features"].values))
-        return test_DF
+        return add_ranks(test_DF)
 
 class XGBoostLTR_pipeline(LTR_pipeline):
     """
