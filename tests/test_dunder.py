@@ -13,26 +13,6 @@ class TestDunder(BaseTestCase):
     def tearDown(self):
         import shutil
         shutil.rmtree(self.test_dir)
-
-    def test_metaindex_dunders(self):
-        if not pt.check_version("5.3"):
-            self.skipTest("Requires Terrier 5.3")
-        indexref = pt.datasets.get_dataset("vaswani").get_index()
-        i = pt.IndexFactory.of(indexref)
-        m = i.getMetaIndex()
-
-        # check len() for metaindex
-        self.assertEqual(len(m), len(i))
-
-        series_col = m["docno"]
-
-        # check len() for docno series        
-        self.assertEqual(len(series_col), len(i))
-
-        # check that the two series contain what we expect
-        self.assertEqual(series_col[0], m[0]["docno"])
-        self.assertEqual(series_col[0], m.as_df().iloc[0]["docno"])
-        self.assertEqual(len(series_col), len(m.as_df()))
         
     def test_dunders(self):
         import pandas as pd
