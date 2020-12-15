@@ -211,12 +211,24 @@ def Experiment(
         return df 
     return evalDict
 
+import sys
+if sys.version_info.minor > 7:
+    from typing import Protocol
+else:
+    from typing_extensions import Protocol  # for Python <3.8
+
+class ScikitModel(Protocol):
+    def fit(self, X, y): ...
+    def predict(self, X): ...
+
+class LTRModel(ScikitModel):
+    def fit(self, X, y,  group, eval_set, eval_group): ...
 
 class LTR_pipeline(EstimatorBase):
     """
     This class simplifies the use of Scikit-learn's techniques for learning-to-rank.
     """
-    def __init__(self, LTR, *args, fit_kwargs={}, **kwargs):
+    def __init__(self, LTR : ScikitModel, *args, fit_kwargs={}, **kwargs):
         """
         Init method
 
@@ -258,6 +270,9 @@ class XGBoostLTR_pipeline(LTR_pipeline):
     """
     This class simplifies the use of XGBoost's techniques for learning-to-rank.
     """
+
+    def __init__(self, LTR : LTRModel, *args, **kwargs):
+        super().__init__(LTR, *args, **kwargs)
 
     def transform(self, topics_and_docs_Test):
         """

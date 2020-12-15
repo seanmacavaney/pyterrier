@@ -3,7 +3,7 @@ import pytrec_eval
 from collections import defaultdict
 import os
 import deprecation
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Sequence
 
 @deprecation.deprecated(deprecated_in="0.3.0",
                         details="Please use pt.io.autopen()")
@@ -335,7 +335,7 @@ class Utils:
         return coerce_queries_dataframe(query)
 
     @staticmethod
-    def get_files_in_dir(dir : str):
+    def get_files_in_dir(dir : str) -> Sequence[str]:
         """
         Returns all the files present in a directory and its subdirectories
 
