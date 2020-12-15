@@ -34,26 +34,6 @@ class TestDunder(BaseTestCase):
         self.assertEqual(series_col[0], m.as_df().iloc[0]["docno"])
         self.assertEqual(len(series_col), len(m.as_df()))
         
-
-
-    def test_index_dunders(self):
-        indexref = pt.datasets.get_dataset("vaswani").get_index()
-        i1 = pt.IndexFactory.of(indexref)
-        i2 = pt.IndexFactory.of(indexref)
-        i12 = i1 + i2
-        self.assertIsNotNone(i12)
-        self.assertEqual(
-            i12.getCollectionStatistics().getNumberOfDocuments(), 
-            i1.getCollectionStatistics().getNumberOfDocuments()
-            + i2.getCollectionStatistics().getNumberOfDocuments())
-
-        self.assertEqual( len(i12), len(i1) + len(i2) )
-            
-        self.assertTrue(i12.hasIndexStructure("inverted"))
-        self.assertTrue(i12.hasIndexStructure("lexicon"))
-        self.assertTrue(i12.hasIndexStructure("document"))
-        self.assertTrue(i12.hasIndexStructure("meta"))
-
     def test_dunders(self):
         import pandas as pd
         df = pd.DataFrame({
