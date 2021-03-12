@@ -24,12 +24,14 @@ This page summarises the available notebooks for PyTerrier.
 
 ## PyTerrier Neural Re-Ranking
 
-
+|    Notebook      |   On Colab?     | Description                      |  Read More | 
+| ---------------- | --------------- | -------------------------------- | ---------- |
+| [pt_indexed_epic.ipynb](https://github.com/Georgetown-IR-Lab/OpenNIR/blob/master/examples/pt_indexed_epic.ipynb)  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Georgetown-IR-Lab/OpenNIR/blob/master/examples/pt_indexed_epic.ipynb) | Demonstration of pre-computing EPIC vectors and using them for second-stage scoring using PyTerrier on the TREC COVID benchmark | [OpenNIR repository](https://github.com/Georgetown-IR-Lab/OpenNIR)
 
 ## PyTerrier Dense Retrieval
 
 |    Notebook      |   On Colab?     | Description                      |  Read More | 
 | ---------------- | --------------- | -------------------------------- | ---------- |
-| [pyterrier_ance_vaswani.ipynb](https://github.com/terrierteam/pyterrier_ance/blob/main/pyterrier_ance_vaswani.ipynb)  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrierteam/pyterrier_ance/blob/main/pyterrier_ance_vaswani.ipynb) | Demonstration of ANCE dense indexing and retrieval using PyTerrier on the Vaswani NPL corpus | [PyTerrier_ance repository](https://github.com/terrierteam/pyterrier_ance)
+| [pyterrier_ance_vaswani.ipynb](https://github.com//pyterrier_ance/blob/main/pyterrier_ance_vaswani.ipynb)  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/terrierteam/pyterrier_ance/blob/main/pyterrier_ance_vaswani.ipynb) | Demonstration of ANCE dense indexing and retrieval using PyTerrier on the Vaswani NPL corpus | [PyTerrier_ance repository](https://github.com/terrierteam/pyterrier_ance)
 
 
