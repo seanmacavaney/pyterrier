@@ -7,13 +7,15 @@ search ranking. PyTerrier supplies a number of query rewriting transformers desi
 Firstly, we differentiate between two forms of query rewriting:
 
  - `Q -> Q`: this rewrites the query, for instance by adding/removing extra query terms. Examples might 
-   be a WordNet- or Word2Vec-based query expansion, or proximity query rewriting, such as the sequential
-   dependence model. In this form, the input dataframes contain only `["qid", "docno"]` columns and
-   similarly, the output dataframes contain only `["qid", "docno"]` columns.
+   be a WordNet- or Word2Vec-based QE; The input dataframes contain only `["qid", "docno"]` columns. The 
+   output dataframes contain `["qid", "query", "query_0"]` columns, where `"query"` contains the reformulated
+   query, and `"query_0"` contains the previous formulation of the query.
 
- - `R -> Q`: these class of transformers rewrite a query by making use of an associated set of documents
-   for each query. This is exemplifed by pseudo-relevance feedback, where expansion terms are identified
-   from the retrieved documents of each query.
+ - `R -> Q`: these class of transformers rewrite a query by making use of an associated set of documents.
+   This is typically exemplifed by pseudo-relevance feedback. Similarly the output dataframes contain 
+   `["qid", "query", "query_0"]` columns.
+
+The previous formulation of the query can be restored using `pt.rewrite.reset()`, discussed below.
 
 SequentialDependence
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -30,7 +32,7 @@ For example, the query `pyterrier IR platform` would become `pyterrier IR platfo
 NB: Acutally, we have simplified the rewritten query - in practice, we also (a) set the weight of the proximity terms to be low using a `#combine()`
 operator and (b) set a proximity term weighting model.
 
-This transfomer is only compatible with BatchRetrieve, as Terrier supports the `#1` and `#uwN` complex query terms operators.
+This transfomer is only compatible with BatchRetrieve, as Terrier supports the `#1` and `#uwN` complex query terms operators. The Terrier index must have blocks (positional information) recorded in the index.
 
 .. autoclass:: pyterrier.rewrite.SequentialDependence
     :members: transform
@@ -96,6 +98,10 @@ RM3
 .. autoclass:: pyterrier.rewrite.RM3
     :members: transform 
 
+References:
+ - Nasreen Abdul-Jaleel, James Allan, W Bruce Croft, Fernando Diaz, Leah Larkey, Xiaoyan Li, Mark D Smucker, and Courtney Wade. UMass at TREC 2004: Novelty and HARD. In Proceedings of TREC 2004.
+
+
 AxiomaticQE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -105,3 +111,103 @@ AxiomaticQE
 References:
  - Hui Fang, Chang Zhai.: Semantic term matching in axiomatic approaches to information retrieval. In: Proceedings of the 29th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval, pp. 115–122. SIGIR 2006. ACM, New York (2006).
  - Peilin Yang and Jimmy Lin, Reproducing and Generalizing Semantic Term Matching in Axiomatic Information Retrieval. In Proceedings of ECIR 2019.
+
+Combining Query Formulations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: pyterrier.rewrite.linear
+
+Resetting the Query Formulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The application of any query rewriting operation, including the apply transformer, `pt.apply.query()`, will return a dataframe
+that includes the *input* formulation of the query in the `query_0` column, and the new reformulation in the `query` column. The
+previous query reformulation can be obtained by inclusion of a reset transformer in the pipeline.
+
+.. autofunction:: pyterrier.rewrite.reset()
+
+
+Stashing the Documents
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sometimes you want to apply a query rewriting function as a re-ranker, but your rewriting function uses a different document ranking.
+In this case, you can use `pt.rewrite.stash_results()` to stash the retrieved documents for each query, so they can be recovered and 
+re-ranked later using your rewritten query formulation.
+
+.. autofunction:: pyterrier.rewrite.stash_results()
+
+.. autofunction:: pyterrier.rewrite.reset_results()
+
+Example: Query Expansion as a re-ranker
+
+Some papers `advocate <https://dl.acm.org/doi/10.1145/2808194.2809491>`_ for the use of query expansion (PRF) as a re-ranker. 
+This can be attained in PyTerrier through use of `stash_results()` and `reset_results()`::
+
+    # index: the corpus you are ranking
+
+    dph = pt.BatchRetrieve(index)
+    Pipe = dph 
+        >> pt.rewrite.stash_results(clear=False)
+        >> pt.rewrite.RM3(index)
+        >> pt.rewrite.reset_results()
+        >> dph
+
+
+Summary of dataframe types:
+
++--------------+------------------------+---------------------------------------------+
+|output of     |dataframe contents      |actual columns                               |
++==============+========================+=============================================+
+|  dph         | R                      |qid, query, docno, score                     |
++--------------+------------------------+---------------------------------------------+
+|stash_results |R + "stashed_results_0" |qid, query, docno, score, stashed_results_0  |
++--------------+------------------------+---------------------------------------------+
+|RM3           |Q + "stashed_results_0" |qid, query, query_0, stashed_results_0       |
++--------------+------------------------+---------------------------------------------+
+|reset_results |R                       |qid, query, docno, score, query_0            |
++--------------+------------------------+---------------------------------------------+
+|dph           |R                       |qid, query, docno, score, query_0            |
++--------------+------------------------+---------------------------------------------+
+        
+Indeed, as we need RM3 to have the initial ranking of documents as input, we use `clear=False` as the kwarg
+to stash_results().
+
+Example: Collection Enrichment as a re-ranker::
+
+    # index: the corpus you are ranking
+    # wiki_index: index of Wikipedia, used for enrichment
+
+    dph = pt.BatchRetrieve(index)
+    Pipe = dph 
+        >> pt.rewrite.stash_results()          
+        >> pt.BatchRetrieve(wiki_index)
+        >> pt.rewrite.RM3(wiki_index)
+        >> pt.rewrite.reset_results()
+        >> dph
+
+In general, collection enrichment describes conducting a PRF query expansion process on an external corpus (often Wikipedia), 
+before applying the reformulated query to the main corpus. Collection enrichment can be used for improving a first pass 
+retrieval (`pt.BatchRetrieve(wiki_index) >> pt.rewrite.RM3(wiki_index) >> pt.BatchRetrieve(main_index)`). Instead, the particular 
+example shown above applies collection enrichment as a re-ranker.
+
+
+Summary of dataframe types:
+
++--------------+-----------------------+-------------------------------------------+
+|output of     |dataframe contents     |actual columns                             |
++==============+=======================+===========================================+
+|  dph         | R                     |qid, query, docno, score                   |
++--------------+-----------------------+-------------------------------------------+
+|stash_results |Q + "stashed_results_0"|qid, query, saved_docs_0                   |
++--------------+-----------------------+-------------------------------------------+
+|BatchRetrieve |R + "stashed_results_0"|qid, query, docno, score, stashed_results_0|
++--------------+-----------------------+-------------------------------------------+
+|RM3           |Q + "stashed_results_0"|qid, query, query_0, stashed_results_0     |
++--------------+-----------------------+-------------------------------------------+
+|reset_results |R                      |qid, query, docno, score, query_0          |
++--------------+-----------------------+-------------------------------------------+
+|dph           |R                      |qid, query, docno, score, query_0          |
++--------------+-----------------------+-------------------------------------------+
+
+In this example, we have a BatchRetrieve instance executed on the wiki_index before RM3, so we clear the
+document ranking columns when using `stash_results()`.

@@ -2,19 +2,11 @@ import pandas as pd
 import pyterrier as pt
 import unittest
 import os
-from .base import BaseTestCase
+from .base import TempDirTestCase
 import shutil
 import tempfile
 
-class TestUtils(BaseTestCase):
-
-    def setUp(self):
-        # Create a temporary directory
-        self.test_dir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        # Remove the directory after the test
-        shutil.rmtree(self.test_dir)
+class TestUtils(TempDirTestCase):
 
     def test_convert_df_to_pytrec_eval_float(self):
         input = pd.DataFrame([["1", "1", 12.5], ["1", "7", 4.3], ["2", "12", 8.5]], columns=["qid", "docno", "score"])
@@ -55,10 +47,9 @@ class TestUtils(BaseTestCase):
             self.assertAlmostEqual(result[str(i + 1)]["map"], item, places=4)
 
         result = pt.Utils.evaluate(input_res, input_qrels, metrics=["iprec_at_recall"])
-        self.assertTrue("iprec_at_recall_0.10" in result)
+        self.assertTrue("IPrec@0.1" in result)
     
     def test_evaluate_ndcg_cut(self):
-        self.skipTest("NDCG_cut now reports all measures")
         input_qrels = pd.DataFrame([["1", "12", 1], ["1", "26", 1], ["1", "5", 1], ["1", "6", 1], ["2", "12", 1], ["2", "13", 1], ["2", "7", 1], ["2", "17", 1]], columns=["qid", "docno", "label"])
         input_res = pd.DataFrame([["1", "12", 3.917300970672472], ["1", "17", 3.912008156607317], ["1", "5", 3.895776784815295], ["1", "6", 1.6976053561565434], ["1", "11394", 1.419217511596875],
                                   ["2", "12", 3.352655284198764], ["2", "13", 3.3410694508732677], ["2", "7", 3.32843147860022], ["2", "15", 3.210614190096991], ["2", "17", 1.3688610792424558], ["2", "25", 1.2673250497019404]],

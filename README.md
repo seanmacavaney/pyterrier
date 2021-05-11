@@ -20,8 +20,9 @@ The easiest way to get started with PyTerrier is to use one of our Colab noteboo
 1. You need to hava Java installed. Pyjnius/PyTerrier will pick up the location automatically.
 2. `pip install python-terrier`
 
-### Windows
-PyTerrier is not available for Windows because [pytrec_eval](https://github.com/cvangysel/pytrec_eval) [isn't available for Windows](https://github.com/cvangysel/pytrec_eval/issues/19). If you can compile & install pytrec_eval youself, it should work fine.
+### Windows 🆕
+1. `pip install python-terrier`
+2. You may need to set JAVA_HOME environment variable if Pyjnius cannot find your Java installation.
 
 # Indexing
 
@@ -57,13 +58,26 @@ There is a worked example in the [experiment notebook](examples/notebooks/experi
 
 # Pipelines
 
-Pyterrier makes it easy to develop complex retrieval pipelines using Python operators such as `>>` to chain different retrieval components. Each retrieval approach is a [transformer](https://pyterrier.readthedocs.io/en/latest/transformer.html), having one key method, `transform()`, which takes a single Pandas dataframe as input, and returns another dataframe. Two examples might encapsulate applying the sequential dependence model, or a query expansion process:
+PyTerrier makes it easy to develop complex retrieval pipelines using Python operators such as `>>` to chain different retrieval components. Each retrieval approach is a [transformer](https://pyterrier.readthedocs.io/en/latest/transformer.html), having one key method, `transform()`, which takes a single Pandas dataframe as input, and returns another dataframe. Two examples might encapsulate applying the sequential dependence model, or a query expansion process:
 ```python
 sdm_bm25 = pt.rewrite.SDM() >> pt.BatchRetrieve(indexref, wmodel="BM25")
 bo1_qe = BM25_br >> pt.rewrite.Bo1QueryExpansion() >> BM25_br
 ```
 
-There is documentation on [transformer operators](https://pyterrier.readthedocs.io/en/latest/operators.html) as well as  [example pipelines](https://pyterrier.readthedocs.io/en/latest/pipeline_examples.html) show other common use cases. For more information, see the [PyTerrier data model](https://pyterrier.readthedocs.io/en/latest/datamodel.html).
+There is documentation on [transformer operators](https://pyterrier.readthedocs.io/en/latest/operators.html) as well as [example pipelines](https://pyterrier.readthedocs.io/en/latest/pipeline_examples.html) show other common use cases. For more information, see the [PyTerrier data model](https://pyterrier.readthedocs.io/en/latest/datamodel.html).
+
+# Neural Reranking and Dense Retrieval
+
+PyTerrier has additional plugins for BERT (through OpenNIR), T5, ColBERT, ANCE, DeepCT and doc2query.
+
+ - OpenNIR: [[Github](https://github.com/Georgetown-IR-Lab/OpenNIR)] [[Documentation](https://opennir.net/)]
+ - PyTerrier_ANCE: [[Github](https://github.com/terrierteam/pyterrier_ance)] - dense retrieval
+ - PyTerrier_ColBERT: [[Github](https://github.com/terrierteam/pyterrier_colbert)] - dense retrieval and/or neural reranking
+ - PyTerrier_T5: [[Github](https://github.com/terrierteam/pyterrier_t5)] - neural reranking
+ - PyTerrier_doc2query: [[Github](https://github.com/terrierteam/pyterrier_doc2query)] - neural augmented indexing
+ - PyTerrier_DeepCT: [[Github](https://github.com/terrierteam/pyterrier_deepct)] - neural augmented indexing
+
+You can see examples of how to use these, including notebooks that run on Google Colab, in the contents of our [ECIR 2021 tutorial](https://github.com/terrier-org/ecir2021tutorial).
 
 # Learning to Rank
 
@@ -82,20 +96,20 @@ See also the [learning to rank documentation](https://pyterrier.readthedocs.io/e
 PyTerrier allows simple access to standard information retrieval test collections through its [dataset API](https://pyterrier.readthedocs.io/en/latest/datasets.html), which can download the topics, qrels, corpus or, for some test collections, a ready-made Terrier index.
 
 ```python
-topics = pt.datasets.get_dataset("trec-robust-2004").get_topics()
-qrels = pt.datasets.get_dataset("trec-robust-2004").get_qrels()
+topics = pt.get_dataset("trec-robust-2004").get_topics()
+qrels = pt.get_dataset("trec-robust-2004").get_qrels()
 pt.Experiment([BM25_br, PL2_br], topics, qrels, eval_metrics)
 ```
 
 You can index datasets that include a corpus using IterDictIndexer and get_corpus_iter:
 
 ```python
-dataset = pt.datasets.get_dataset('irds:cord19/trec-covid')
-indexer = pt.index.IterDictIndexer('./cord19-index')
+dataset = pt.get_dataset('irds:cord19/trec-covid')
+indexer = pt.IterDictIndexer('./cord19-index')
 index_ref = indexer.index(dataset.get_corpus_iter(), fields=('title', 'abstract'))
 ```
 
-You can use `pt.datasets.list_datasets()` to see available test collections - if your favourite test collection is missing, [you can submit a Pull Request](https://github.com/terrier-org/pyterrier/pulls).
+You can use `pt.list_datasets()` to see available test collections - if your favourite test collection is missing, [you can submit a Pull Request](https://github.com/terrier-org/pyterrier/pulls).
 
 All datasets from the [ir_datasets package](https://github.com/allenai/ir_datasets) are available
 under the `irds:` prefix. E.g., use `pt.datasets.get_dataset("irds:medline/2004/trec-genomics-2004")`
@@ -126,7 +140,7 @@ The source and binary forms of PyTerrier are subject to the following citation l
 
 By downloading and using PyTerrier, you agree to cite at the undernoted paper describing PyTerrier in any kind of material you produce where PyTerrier was used to conduct search or experimentation, whether be it a research paper, dissertation, article, poster, presentation, or documentation. By using this software, you have agreed to the citation licence.
 
-[Declarative Experimentation inInformation Retrieval using PyTerrier. Craig Macdonald and Nicola Tonellotto. In Proceedings of ICTIR 2020.](https://arxiv.org/abs/2007.14271)
+[Declarative Experimentation in Information Retrieval using PyTerrier. Craig Macdonald and Nicola Tonellotto. In Proceedings of ICTIR 2020.](https://arxiv.org/abs/2007.14271)
 
 ```bibtex
 @inproceedings{pyterrier2020ictir,
@@ -146,3 +160,4 @@ By downloading and using PyTerrier, you agree to cite at the undernoted paper de
  - Arthur Câmara, Delft University
  - Alberto Ueda, Federal University of Minas Gerais
  - Sean MacAvaney, Georgetown University
+ - Chentao Xu, University of Glasgow

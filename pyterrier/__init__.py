@@ -1,7 +1,7 @@
-__version__ = "0.3.1"
+__version__ = "0.5.0"
 
 import os
-from .bootstrap import _logging, setup_terrier, setup_jnius
+from .bootstrap import _logging, setup_terrier, setup_jnius, is_windows
 
 import importlib
 
@@ -12,8 +12,10 @@ cache = None
 index = None
 io = None
 ltr = None
+measures = None
 model = None
 new = None
+parallel = None
 pipelines = None
 rewrite = None
 text = None
@@ -27,6 +29,7 @@ IndexRef = None
 properties = None
 tqdm = None
 HOME_DIR = None
+init_args ={}
 
 def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, logging='WARN', home_dir=None, boot_packages=[], tqdm=None):
     """
@@ -86,6 +89,12 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     # get the initial classpath for the JVM
     classpathTrJars = setup_terrier(HOME_DIR, version, boot_packages=boot_packages)
     
+    if is_windows():
+        if "JAVA_HOME" in os.environ:
+            java_home =  os.environ["JAVA_HOME"]
+            fix = '%s\\jre\\bin\\server\\;%s\\jre\\bin\\client\\;%s\\bin\\server\\' % (java_home, java_home, java_home)
+            os.environ["PATH"] = os.environ["PATH"] + ";" + fix
+
     # Import pyjnius and other classes
     import jnius_config
     for jar in classpathTrJars:
@@ -116,14 +125,18 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     from .utils import Utils
     from .datasets import get_dataset, list_datasets
     from .index import Indexer, FilesIndexer, TRECCollectionIndexer, DFIndexer, DFIndexUtils, IterDictIndexer, FlatJSONDocumentIterator, IndexingType
-    from .pipelines import LTR_pipeline, XGBoostLTR_pipeline, Experiment
+    from .pipelines import LTR_pipeline, XGBoostLTR_pipeline, Experiment, GridScan, GridSearch, KFoldGridSearch
 
     # Make imports global
     globals()["autoclass"] = autoclass
     globals()["cast"] = cast
     globals()["ApplicationSetup"] = ApplicationSetup
 
-    for sub_module_name in ['anserini', 'apply', 'cache', 'index', 'io', 'model', 'new', 'ltr', 'pipelines', 'rewrite', 'text', 'transformer']:
+    # apply is an object, not a module, as it also has __get_attr__() implemented
+    from .apply import _apply
+    globals()['apply'] = _apply()
+
+    for sub_module_name in ['anserini', 'cache', 'index', 'io', 'measures', 'model', 'new', 'ltr', 'parallel', 'pipelines', 'rewrite', 'text', 'transformer']:
         globals()[sub_module_name] = importlib.import_module('.' + sub_module_name, package='pyterrier') 
 
     # append the python helpers
@@ -139,6 +152,7 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     if redirect_io:
         # this ensures that the python stdout/stderr and the Java are matched
         redirect_stdouterr()
+    init_args["logging"] = logging
     _logging(logging)
     setup_jnius()
 
@@ -160,7 +174,21 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["IndexFactory"] = autoclass("org.terrier.structures.IndexFactory")
     globals()["IndexRef"] = autoclass("org.terrier.querying.IndexRef")
     globals()["IndexingType"] = IndexingType
-
+    globals()["GridScan"] = GridScan
+    globals()["GridSearch"] = GridSearch
+    globals()["KFoldGridSearch"] = KFoldGridSearch
+    
+    
+    # we save the pt.init() arguments so that other processes,
+    # started by joblib or ray can booted with same options
+    init_args["version"] = version
+    init_args["mem"] = mem
+    init_args["packages"] = packages
+    init_args["jvm_opts"] = jvm_opts
+    init_args["redirect_io"] = redirect_io
+    init_args["home_dir"] = home_dir
+    init_args["boot_packages"] = boot_packages
+    init_args["tqdm"] = tqdm
     firstInit = True
 
 def set_tqdm(type):
@@ -170,6 +198,8 @@ def set_tqdm(type):
         view progress by using the verbose=True kwarg to many classes, such as BatchRetrieve.
 
         The `tqdm <https://tqdm.github.io/>`_ progress bar can be made prettier when using appropriately configured Jupyter notebook setups.
+        We use this automatically when Google Colab is detected.
+
         Allowable options for type are:
 
          - `'tqdm'`: corresponds to the standard text progresss bar, ala `from tqdm import tqdm`.
@@ -177,8 +207,15 @@ def set_tqdm(type):
          - `'auto'`: allows tqdm to decide on the progress bar type, ala `from tqdm.auto import tqdm`. Note that this works fine on Google Colab, but not on Jupyter unless the `ipywidgets have been installed <https://ipywidgets.readthedocs.io/en/stable/user_install.html>`_.
     """
     global tqdm
+
+    import sys
+    if type is None:
+        if 'google.colab' in sys.modules:
+            type = 'notebook'
+        else:
+            type = 'tqdm'
     
-    if type is None or type == 'tqdm':
+    if type == 'tqdm':
         from tqdm import tqdm as bartype
         tqdm = bartype
     elif type == 'notebook':

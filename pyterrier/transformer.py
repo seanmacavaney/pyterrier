@@ -6,6 +6,7 @@ import pandas as pd
 from .model import add_ranks
 from . import tqdm
 import deprecation
+from typing import Iterable
 
 LAMBDA = lambda:0
 def is_lambda(v):
@@ -89,7 +90,7 @@ def setup_rewrites():
 
     def push_fbr_earlier(_br1, _fbr):
         #TODO copy more attributes
-        _fbr.controls["wmodel"] = _br1.controls["wmodel"]
+        _fbr.wmodel = _br1.controls["wmodel"]
         return _fbr
 
     # rewrite a BR followed by a FBR into a FBR
@@ -108,6 +109,7 @@ class Scalar(Symbol):
         self.value = value
 
 class TransformerBase:
+    name = "TransformerBase"
     """
         Base class for all transformers. Implements the various operators >> + * | & 
         as well as the compile() for rewriting complex pipelines into more simples ones.
@@ -119,8 +121,11 @@ class TransformerBase:
             DataFrame, and also returns one.
         """
         pass
-        
-    def transform_gen(self, input, batch_size=1):
+
+    def transform_iter(self, input: Iterable[dict]) -> pd.DataFrame:
+        return self.transform(pd.DataFrame(list(input)))
+
+    def transform_gen(self, input : pd.DataFrame, batch_size=1) -> pd.DataFrame:
         """
             Method for executing a transformer pipeline on smaller batches of queries.
             The input dataframe is grouped into batches of batch_size queries, and a generator
@@ -144,7 +149,7 @@ class TransformerBase:
             batch_topics = pd.concat(batch)
             yield self.transform(batch_topics)
 
-    def search(self, query : str, qid : str = "1", sort=True):
+    def search(self, query : str, qid : str = "1", sort=True) -> pd.DataFrame:
         """
             Method for executing a transformer (pipeline) for a single query. 
             Returns a dataframe with the results for the specified query. This
@@ -176,13 +181,47 @@ class TransformerBase:
 
     def compile(self):
         """
-            Rewrites this pipeline by applying of the Matchpy rules in rewrite_rules. Pipeline
-            optimisation is discussed in the `ICTIR 2020 paper on PyTerrier <https://arxiv.org/abs/2007.14271>`_.
+        Rewrites this pipeline by applying of the Matchpy rules in rewrite_rules. Pipeline
+        optimisation is discussed in the `ICTIR 2020 paper on PyTerrier <https://arxiv.org/abs/2007.14271>`_.
         """
         if not rewrites_setup:
             setup_rewrites()
         print("Applying %d rules" % len(rewrite_rules))
         return replace_all(self, rewrite_rules)
+
+    def parallel(self, N : int, backend='joblib'):
+        """
+        Returns a parallelised version of this transformer. The underlying transformer must be "picklable".
+
+        Args:
+            N(int): how many processes/machines to parallelise this transformer over. 
+            backend(str): which multiprocessing backend to use. Only two backends are supported, 'joblib' and 'ray'. Defaults to 'joblib'.
+        """
+        from .parallel import PoolParallelTransformer
+        return PoolParallelTransformer(self, N, backend)
+
+    # Get and set specific parameter value by parameter's name
+    def get_parameter(self, name : str):
+        """
+            Gets the current value of a particular key of the transformer's configuration state.
+            By default, this examines the attributes of the transformer object, using hasattr() and setattr().
+        """
+        if hasattr(self, name):
+            return getattr(self, name)
+        else:
+            raise ValueError(("Invalid parameter name %s for transformer %s. " + 
+                      "Check the list of available parameters") %(str(name), str(self)))
+
+    def set_parameter(self, name : str, value):
+        """
+            Adjusts this transformer's configuration state, by setting the value for specific parameter.
+            By default, this examines the attributes of the transformer object, using hasattr() and setattr().
+        """
+        if hasattr(self, name):
+            setattr(self, name, value)
+        else:
+            raise ValueError(('Invalid parameter name %s for transformer %s. '+
+                    'Check the list of available parameters') %(name, str(self)))
 
     def __call__(self, *args, **kwargs):
         """
@@ -227,7 +266,12 @@ class TransformerBase:
         from .cache import ChestCacheTransformer
         return ChestCacheTransformer(self)
 
-        
+    def __hash__(self):
+        return hash(repr(self))
+
+class IterDictIndexerBase(TransformerBase):
+    def index(self, iter : Iterable[dict], **kwargs):
+        pass
 
     
 class EstimatorBase(TransformerBase):
@@ -237,11 +281,12 @@ class EstimatorBase(TransformerBase):
     def fit(self, topics_or_res_tr, qrels_tr, topics_or_res_va, qrels_va):
         """
             Method for training the transformer.
+
             Arguments:
-            - topics_or_res_tr(DataFrame): training topics (probably with documents)
-            - qrels_tr(DataFrame): training qrels
-            - topics_or_res_va(DataFrame): validation topics (probably with documents)
-            - qrels_va(DataFrame): validation qrels
+             - topics_or_res_tr(DataFrame): training topics (usually with documents)
+             - qrels_tr(DataFrame): training qrels
+             - topics_or_res_va(DataFrame): validation topics (usually with documents)
+             - qrels_va(DataFrame): validation qrels
         """
         pass
 
@@ -574,6 +619,8 @@ class ApplyQueryTransformer(ApplyTransformerBase):
 
             pipe = pt.apply.query(lambda row: row["query"] + " extra words") >> pt.BatchRetrieve(index)
 
+        In the resulting dataframe, the previous query for each row can be found in the query_0 column.
+
     """
     def __init__(self, fn, *args, **kwargs):
         """
@@ -584,8 +631,9 @@ class ApplyQueryTransformer(ApplyTransformerBase):
         super().__init__(fn, *args, **kwargs)
 
     def transform(self, inputRes):
+        from .model import push_queries
         fn = self.fn
-        outputRes = inputRes.copy()
+        outputRes = push_queries(inputRes.copy(), inplace=True, keep_original=True)
         if self.verbose:
             tqdm.pandas(desc="pt.apply.query", unit="d")
             outputRes["query"] = outputRes.progress_apply(fn, axis=1)
@@ -736,6 +784,23 @@ class ComposedPipeline(NAryTransformerBase):
         >>> # comp = DPH_br >> lambda res : res[res["rank"] < 2]]
     """
     name = "Compose"
+
+    def index(self, iter : Iterable[dict], batch_size=100):
+        from more_itertools import ichunked
+        
+        if len(self.models) > 2:
+            #this compose could have > 2 models. we need a composite transform() on all but the last
+            prev_transformer = ComposedPipeline(self.models[0:-1])
+        else:
+            prev_transformer = self.models[0]
+        last_transformer = self.models[-1]
+        
+        def gen():
+            for batch in ichunked(iter, batch_size):
+                batch_df = prev_transformer.transform_iter(batch)
+                for row in batch_df.itertuples(index=False):
+                    yield row._asdict()
+        return last_transformer.index(gen()) 
 
     def transform(self, topics):
         for m in self.models:

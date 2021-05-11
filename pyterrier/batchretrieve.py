@@ -120,7 +120,43 @@ class BatchRetrieve(BatchRetrieveBase):
 
         MF = autoclass('org.terrier.querying.ManagerFactory')
         self.manager = MF._from_(self.indexref)
-        
+    
+    def get_parameter(self, name : str):
+        if name in self.controls:
+            return self.controls[name]
+        elif name in self.properties:
+            return self.properties[name]
+        else:
+            return super().get_parameter(name)
+
+    def set_parameter(self, name : str, value):
+        if name in self.controls:
+            self.controls[name] = value
+        elif name in self.properties:
+            self.properties[name] = value
+        else:
+            super().set_parameter(name,value)
+
+    def __reduce__(self):
+        return (
+            self.__class__,
+            (self.indexref,),
+            self.__getstate__()
+        )
+
+    def __getstate__(self): 
+        return  {
+                'controls' : self.controls, 
+                'properties' : self.properties, 
+                'metadata' : self.metadata,
+                }
+
+    def __setstate__(self, d): 
+        self.controls = d["controls"]
+        self.metadata = d["metadata"]
+        self.properties.update(d["properties"])
+        for key,value in d["properties"].items():
+            self.appSetup.setProperty(key, str(value))
 
     def transform(self, queries):
         """
@@ -161,6 +197,10 @@ class BatchRetrieve(BatchRetrieveBase):
             rank = FIRST_RANK
             qid = str(row.qid)
             query = row.query
+            if len(query) == 0:
+                warn("Skipping empty query for qid %s" % qid)
+                continue
+
             srq = self.manager.newSearchRequest(qid, query)
             
             for control, value in self.controls.items():
@@ -202,7 +242,8 @@ class BatchRetrieve(BatchRetrieveBase):
 
             # check we got all of the expected metadata (if the resultset has a size at all)
             if len(result) > 0 and len(set(self.metadata) & set(result.getMetaKeys())) != len(self.metadata):
-                raise KeyError("Requested metadata: %s, obtained metadata %s" % (str(self.metadata), str(result.getMetaKeys()))) 
+                raise KeyError("Mismatch between requested and available metadata in %s. Requested metadata: %s, available metadata %s" % 
+                    (str(self.indexref), str(self.metadata), str(result.getMetaKeys()))) 
 
             if num_expected is not None:
                 assert(num_expected == len(result))
@@ -215,10 +256,11 @@ class BatchRetrieve(BatchRetrieveBase):
                 rank += 1
                 results.append(res)
         res_dt = pd.DataFrame(results, columns=['qid', 'docid' ] + self.metadata + ['rank', 'score'])
-        # ensure to return the query
-        res_dt = res_dt.merge(queries[["qid", "query"]], on=["qid"])
+        # ensure to return the query and any other input columns
+        input_cols = queries.columns[ (queries.columns == "qid") | (~queries.columns.isin(res_dt.columns))]
+        res_dt = res_dt.merge(queries[input_cols], on=["qid"])
         return res_dt
-
+        
     def __repr__(self):
         return "BR(" + ",".join([
             self.indexref.toString(),
@@ -228,16 +270,6 @@ class BatchRetrieve(BatchRetrieveBase):
 
     def __str__(self):
         return "BR(" + self.controls["wmodel"] + ")"
-
-    @deprecation.deprecated(deprecated_in="0.3.0",
-                        details="Please use pt.io.write_results(res, path, format='trec')")
-    def saveResult(self, result, path, run_name=None):
-        if run_name is None:
-            run_name = self.controls["wmodel"]
-        res_copy = result.copy()[["qid", "docno", "rank", "score"]]
-        res_copy.insert(1, "Q0", "Q0")
-        res_copy.insert(5, "run_name", run_name)
-        res_copy.to_csv(path, sep=" ", header=False, index=False)
 
     def setControls(self, controls):
         for key, value in controls.items():
@@ -317,9 +349,12 @@ class TextIndexProcessor(TransformerBase):
             # as this is a new index, docids are not meaningful externally, so lets drop them
             inner_res.drop(columns=['docid'], inplace=True)
 
+            topics_columns = topics_and_res.columns[(topics_and_res.columns.isin(["qid", "docno"])) | (~topics_and_res.columns.isin(inner_res.columns))]
             if len(inner_res) < len(topics_and_res):
-                inner_res = topics_and_res[["qid", "docno"]].merge(inner_res, on=["qid", "docno"], how="left")
+                inner_res = topics_and_res[topics_columns].merge(inner_res, on=["qid", "docno"], how="left")
                 inner_res["score"] = inner_res["score"].fillna(value=0)
+            else:
+                inner_res = topics_and_res[ topics_columns ].merge(inner_res, on=["qid", "docno"])
         elif self.returns == "queries":
             if len(inner_res) < len(topics):
                 inner_res = topics.merge(on=["qid"], how="left")
@@ -391,6 +426,31 @@ class FeaturesBatchRetrieve(BatchRetrieve):
         
         super().__init__(index_location, controls, properties, **kwargs)
 
+    def __reduce__(self):
+        return (
+            self.__class__,
+            (self.indexref, self.features),
+            self.__getstate__()
+        )
+
+    def __getstate__(self): 
+        return  {
+                'controls' : self.controls, 
+                'properties' : self.properties, 
+                'metadata' : self.metadata,
+                'features' : self.features,
+                'wmodel' : self.wmodel
+                }
+
+    def __setstate__(self, d): 
+        self.controls = d["controls"]
+        self.metadata = d["metadata"]
+        self.features = d["features"]
+        self.wmodel = d["wmodel"]
+        self.properties.update(d["properties"])
+        for key,value in d["properties"].items():
+            self.appSetup.setProperty(key, str(value))
+
     def transform(self, queries):
         """
         Performs the retrieval with multiple features
@@ -438,6 +498,9 @@ class FeaturesBatchRetrieve(BatchRetrieve):
         for row in tqdm(queries.itertuples(), desc=str(self), total=queries.shape[0], unit="q") if self.verbose else queries.itertuples():
             qid = str(row.qid)
             query = row.query
+            if len(query) == 0:
+                warn("Skipping empty query for qid %s" % qid)
+                continue
 
             srq = self.manager.newSearchRequest(qid, query)
 
@@ -495,6 +558,9 @@ class FeaturesBatchRetrieve(BatchRetrieve):
 
         res_dt = pd.DataFrame(results, columns=["qid", "query", "docid", "rank", "features"] + self.metadata)
         res_dt["score"] = newscores
+        # ensure to return the query and any other input columns
+        input_cols = queries.columns[ (queries.columns == "qid") | (~queries.columns.isin(res_dt.columns))]
+        res_dt = res_dt.merge(queries[input_cols], on=["qid"])
         return res_dt
 
     def __repr__(self):

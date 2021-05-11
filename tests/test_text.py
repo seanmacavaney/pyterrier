@@ -16,6 +16,20 @@ class TestText(BaseTestCase):
         self.assertTrue("score" in dfOut.columns)
         self.assertEqual(1.0, dfOut.iloc[0].score)
         self.assertEqual(1.0, dfOut.iloc[1].score)
+
+    def test_fetch_text_docno(self):
+        dfinput = pd.DataFrame([["q1", "a query", "1"]], columns=["qid", "query", "docno"])
+        #indexref, str, Index
+        for indexlike in [
+            pt.get_dataset("vaswani").get_index(), 
+            pt.get_dataset("vaswani").get_index().toString(),
+            pt.IndexFactory.of(pt.get_dataset("vaswani").get_index())
+        ]:
+            textT = pt.text.get_text(indexlike, "docno")
+            self.assertTrue(isinstance(textT, pt.transformer.TransformerBase))
+            dfOut = textT.transform(dfinput)
+            self.assertTrue(isinstance(dfOut, pd.DataFrame))
+            self.assertTrue("docno" in dfOut.columns)
         
     def test_fetch_text_docid(self):
         dfinput = pd.DataFrame([["q1", "a query", 1]], columns=["qid", "query", "docid"])
@@ -32,13 +46,19 @@ class TestText(BaseTestCase):
             self.assertTrue("docno" in dfOut.columns)
 
     def test_fetch_text_irds(self):
-        dfinput = pd.DataFrame([["q1", "a query", "4"]], columns=["qid", "query", "docno"])
+        dfinput = pd.DataFrame([
+            ["q1", "a query", "4"],
+            ["q1", "a query", "1"],
+            ["q1", "a query", "4"],
+            ], columns=["qid", "query", "docno"])
         textT = pt.text.get_text(pt.get_dataset('irds:vaswani'), "text")
         self.assertTrue(isinstance(textT, pt.transformer.TransformerBase))
         dfOut = textT.transform(dfinput)
         self.assertTrue(isinstance(dfOut, pd.DataFrame))
         self.assertTrue("text" in dfOut.columns)
         self.assertTrue("the british computer society  report of a conference held in cambridge\njune\n" in dfOut.iloc[0].text)
+        self.assertTrue("compact memories have flexible capacities  a digital data storage\nsystem with capacity up to bits and random and or sequential access\nis described\n" in dfOut.iloc[1].text)
+        self.assertTrue("the british computer society  report of a conference held in cambridge\njune\n" in dfOut.iloc[2].text)
 
     def test_passager_title(self):
         dfinput = pd.DataFrame([["q1", "a query", "doc1", "title", "body sentence"]], columns=["qid", "query", "docno", "title", "body"])
@@ -75,16 +95,26 @@ class TestText(BaseTestCase):
         self.assertEqual(1, len(dfmax))
         self.assertEqual(1, dfmax["score"][0])
         self.assertTrue("query" in dfmax.columns)
+        self.assertTrue("body" in dfmax.columns)
+        self.assertFalse("pid" in dfmax.columns)
+        self.assertFalse("olddocno" in dfmax.columns)
         self.assertEqual("a query", dfmax["query"][0])
 
         dffirst = pt.text.first_passage()(dfpassage)
         self.assertEqual(1, len(dffirst))
         self.assertEqual(1, dffirst["score"][0])
+        self.assertTrue("body" in dffirst.columns)
+        self.assertFalse("pid" in dffirst.columns)
+        self.assertFalse("olddocno" in dffirst.columns)
 
         dfmean = pt.text.mean_passage()(dfpassage)
         self.assertEqual(1, len(dfmean))
         self.assertEqual(0.5, dfmean["score"][0])
+        self.assertFalse("pid" in dfmean.columns)
+        self.assertFalse("olddocno" in dfmax.columns)
 
         dfmeanK = pt.text.kmaxavg_passage(2)(dfpassage)
         self.assertEqual(1, len(dfmeanK))
         self.assertEqual(0.5, dfmeanK["score"][0])
+        self.assertFalse("pid" in dfmeanK.columns)
+        self.assertFalse("olddocno" in dfmeanK.columns)

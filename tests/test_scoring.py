@@ -2,20 +2,12 @@ import pandas as pd
 import numpy as np
 import unittest
 import pyterrier as pt
-from .base import BaseTestCase
+from .base import TempDirTestCase
 import tempfile
 import shutil
 import os
 
-class TestScoring(BaseTestCase):
-
-    def setUp(self):
-        # Create a temporary directory
-        self.test_dir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        # Remove the directory after the test
-        shutil.rmtree(self.test_dir)
+class TestScoring(TempDirTestCase):
 
     def test_scoring_text(self):
         pt.logging("DEBUG")
@@ -65,6 +57,7 @@ class TestScoring(BaseTestCase):
         rtr = scorer(input)
         self.assertEqual(1, len(rtr))
         self.assertTrue("score" in rtr.columns)
+        self.assertTrue("body" in rtr.columns)
         self.assertEqual(0, rtr.iloc[0]["score"])
 
     def test_scoring_manual(self):
@@ -74,6 +67,7 @@ class TestScoring(BaseTestCase):
         rtr = scorer(input)
         self.assertEqual(1, len(rtr))
         self.assertTrue("score" in rtr.columns)
+        self.assertTrue("body" in rtr.columns)
         self.assertEqual(2, rtr.iloc[0]["score"])
 
         scorer = TextScorer(wmodel="org.terrier.python.TestModel$TFOverN")

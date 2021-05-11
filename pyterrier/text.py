@@ -59,23 +59,23 @@ def get_text(
 def _add_text_terrier_metaindex(index, metadata):
     metaindex = index.getMetaIndex()
     if metaindex is None:
-        raise ValueError("Index %s does not have a metaindex" % str(indexlike))
+        raise ValueError("Index %s does not have a metaindex" % str(index))
 
     for k in metadata:
         if not k in metaindex.getKeys():
             raise ValueError("Index from %s did not have requested metaindex key %s. Keys present in metaindex are %s" % 
-            (str(indexlike), k, str( metaindex.getKeys()) ))
+            (str(index), k, str( metaindex.getKeys()) ))
 
     def add_docids(res):
         res = res.copy()
-        res["docid"] = res.apply(lambda row: met.getDocument("docno", row.docno))
+        res["docid"] = res.apply(lambda row: metaindex.getDocument("docno", row.docno), axis=1)
         return res
 
     def add_text_function_docids(res):
         res = res.copy()
         docids = res.docid.values.tolist()
         # indexed by docid then keys
-        allmeta = index.getMetaIndex().getItems(metadata, docids)
+        allmeta = metaindex.getItems(metadata, docids)
         import numpy as np
         # get transpose to make easier for insertion back into dataframe?
         allmeta = np.array(allmeta).T
@@ -85,6 +85,7 @@ def _add_text_terrier_metaindex(index, metadata):
 
     def add_text_generic(res):
         if not "docid" in res.columns:
+            assert "docno" in res.columns, "Neither docid nor docno are in the input dataframe, found %s" % (str(res.columns))
             res = add_docids(res)
         return add_text_function_docids(res)
 
@@ -107,12 +108,14 @@ def _add_text_irds_docstore(irds_dataset, metadata):
         assert 'docno' in res, "requires docno column"
         res = res.copy()
         docids = res.docno.values.tolist()
-        did2idx = {did: i for i, did in enumerate(docids)}
+        did2idxs = defaultdict(list)
+        for i, did in enumerate(docids):
+            did2idxs[did].append(i)
         new_columns = {f: [None] * len(docids) for f in metadata}
         for doc in docstore.get_many_iter(docids):
-            didx = did2idx[doc.doc_id]
-            for f, fidx in field_idx:
-                new_columns[f][didx] = doc[fidx]
+            for didx in did2idxs[doc.doc_id]:
+                for f, fidx in field_idx:
+                    new_columns[f][didx] = doc[fidx]
         for k, v in new_columns.items():
             res[k] = v
         return res
@@ -252,36 +255,36 @@ class DePassager(TransformerBase):
         self.agg = agg
 
     def transform(self, topics_and_res):
-        scoredict=defaultdict(lambda: defaultdict(dict))
-        lastqid=None
-        qids=[]
-        for i, row in topics_and_res.iterrows():
-            qid = row["qid"]
-            if qid != lastqid:
-                qids.append(qid)
-                lastqid = qid
-                
-            docno, passage = row["docno"].split("%p")
-            scoredict[qid][docno][int(passage)] = row["score"]
-        rows=[]
-        for qid in qids:
-            for docno in scoredict[qid]:
-                if self.agg == 'first':
-                    first_passage_id = min( scoredict[qid][docno].keys() )
-                    score = scoredict[qid][docno][first_passage_id]
-                if self.agg == 'max':
-                    score = max( scoredict[qid][docno].values() )
-                if self.agg == 'mean':
-                    score = sum( scoredict[qid][docno].values() ) / len(scoredict[qid][docno])
-                if self.agg == "kmaxavg":
-                    values = np.fromiter(scoredict[qid][docno].values(), dtype=float)
-                    K = self.K
-                    score = np.argpartition( values , -K)[-K:].mean() if len(values) > K else values.mean()    
-                rows.append([qid, docno, score])
-        rtr = pd.DataFrame(rows, columns=["qid", "docno", "score"])
-        # add the queries back
-        queries = topics_and_res[["qid", "query"]].dropna(axis=0, subset=["query"]).drop_duplicates()
-        rtr = rtr.merge(queries, on=["qid"])
+        topics_and_res = topics_and_res.copy()
+        topics_and_res[["olddocno", "pid"]] = topics_and_res.docno.str.split("%p", expand=True)
+        if self.agg == 'max':
+            groups = topics_and_res.groupby(['qid', 'olddocno'])
+            group_max_idx = groups['score'].idxmax()
+            rtr = topics_and_res.loc[group_max_idx, :]
+            rtr = rtr.drop(columns=['docno', 'pid']).rename(columns={"olddocno" : "docno"})
+        
+        if self.agg == 'first':
+            #could this be done by just selectin pid = 0?
+            topics_and_res.pid = topics_and_res.pid.astype(int)
+            rtr = topics_and_res[topics_and_res.pid == 0].rename(columns={"olddocno" : "docno"})
+            
+            groups = topics_and_res.groupby(['qid', 'olddocno'])
+            group_first_idx = groups['pid'].idxmin()
+            rtr = topics_and_res.loc[group_first_idx, ]
+            rtr = rtr.drop(columns=['docno', 'pid']).rename(columns={"olddocno" : "docno"})
+
+        if self.agg == 'mean':
+            rtr = topics_and_res.groupby(['qid', 'olddocno']).mean()['score'].reset_index().rename(columns={'olddocno' : 'docno'})
+            from .model import query_columns
+            #add query columns back
+            rtr = rtr.merge(topics_and_res[query_columns(topics_and_res)].drop_duplicates(), on='qid')
+
+        if self.agg == 'kmaxavg':
+            rtr = topics_and_res.groupby(['qid', 'olddocno'])['score'].apply(lambda ser: ser.nlargest(2).mean()).reset_index().rename(columns={'olddocno' : 'docno'})
+            from .model import query_columns
+            #add query columns back
+            rtr = rtr.merge(topics_and_res[query_columns(topics_and_res)].drop_duplicates(), on='qid')
+
         rtr = add_ranks(rtr)
         return rtr
 
@@ -337,7 +340,36 @@ class SlidingWindowPassager(TransformerBase):
         self._check_columns(topics_and_res)
 
         # now apply the passaging
-        return self.applyPassaging(topics_and_res, labels="label" in topics_and_res.columns)
+        if "qid" in topics_and_res.columns: 
+            return self.applyPassaging(topics_and_res, labels="label" in topics_and_res.columns)
+        return self.applyPassaging_no_qid(topics_and_res)
+
+    def applyPassaging_no_qid(self, df):
+        p = re.compile(r"\s+")
+        rows=[]
+        for row in df.itertuples():
+            row = row._asdict()
+            toks = p.split(row[self.text_attr])
+            if len(toks) < self.passage_length:
+                row['docno'] = row['docno'] + "%p0"
+                row[self.text_attr] = ' '.join(toks)
+                if self.prepend_title:
+                    row[self.text_attr] = str(row[self.title_attr]) + self.join + row[self.text_attr]
+                    del(row[self.title_attr])
+                rows.append(row)
+            else:
+                passageCount=0
+                for i, passage in enumerate( slidingWindow(toks, self.passage_length, self.passage_stride)):
+                    newRow = row.copy()
+                    newRow['docno'] = row['docno'] + "%p" + str(i)
+                    newRow[self.text_attr] = ' '.join(passage)
+                    if self.prepend_title:
+                        newRow[self.text_attr] = str(row[self.title_attr]) + self.join + newRow[self.text_attr]
+                        del(newRow[self.title_attr])
+                    rows.append(newRow)
+                    passageCount+=1
+        return pd.DataFrame(rows)
+
 
     def applyPassaging(self, df, labels=True):
         newRows=[]
@@ -354,7 +386,7 @@ class SlidingWindowPassager(TransformerBase):
             return pd.DataFrame(columns=['qid', 'query', 'docno', self.text_attr, 'score', 'rank'])
     
         from pyterrier import tqdm
-        with tqdm('passsaging', total=len(df), ncols=80, desc='passaging', leave=False) as pbar:
+        with tqdm('passsaging', total=len(df), desc='passaging', leave=False) as pbar:
             for index, row in df.iterrows():
                 pbar.update(1)
                 qid = row['qid']
