@@ -143,6 +143,7 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     from .index import Indexer, FilesIndexer, TRECCollectionIndexer, DFIndexer, DFIndexUtils, IterDictIndexer, FlatJSONDocumentIterator, IndexingType
     from .pipelines import Experiment, GridScan, GridSearch, KFoldGridSearch
     from .transformer import Transformer
+    from .terrier_index import TerrierIndex
 
     # Make imports global
     globals()["autoclass"] = autoclass
@@ -179,6 +180,7 @@ def init(version=None, mem=None, packages=[], jvm_opts=[], redirect_io=True, log
     globals()["Experiment"] = Experiment
     globals()["BatchRetrieve"] = BatchRetrieve
     globals()["TerrierRetrieve"] = BatchRetrieve  # TerrierRetrieve is an alias to BatchRetrieve
+    globals()["TerrierIndex"] = TerrierIndex
     globals()["Indexer"] = Indexer
     globals()["FeaturesBatchRetrieve"] = FeaturesBatchRetrieve
     globals()["TRECCollectionIndexer"] = TRECCollectionIndexer
